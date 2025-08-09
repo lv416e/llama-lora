@@ -1,0 +1,15 @@
+[project]
+name = "llama-lora"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "accelerate>=1.10.0",
+    "datasets>=4.0.0",
+    "jupyter>=1.1.1",
+    "peft>=0.17.0",
+    "ruff>=0.12.8",
+    "torch>=2.8.0",
+    "transformers>=4.55.0",
+]
