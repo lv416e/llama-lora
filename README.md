@@ -13,7 +13,7 @@ A simple project to fine-tune Llama models using PEFT (LoRA/DoRA) from the Huggi
 2.  Install the dependencies (it is recommended to use a virtual environment):
     ```bash
     # Using uv
-    uv pip install .
+    uv sync
     ```
 
 ## Usage
