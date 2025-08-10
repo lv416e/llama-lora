@@ -218,7 +218,7 @@ def load_and_setup_model(cfg: DictConfig) -> Any:
             r=cfg.peft.r,
             lora_alpha=cfg.peft.lora_alpha,
             lora_dropout=cfg.peft.lora_dropout,
-            target_modules=cfg.peft.target_modules,
+            target_modules=list(cfg.peft.target_modules),  # Convert ListConfig to list
             use_dora=cfg.model.use_dora,
         )
 

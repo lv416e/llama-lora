@@ -19,4 +19,4 @@ out-tinyllama-lora
 out-llama-lora
 
 # macOS system files
-.DS_Store
+**/.DS_Store
