@@ -12,7 +12,7 @@ USE_DORA = True
 
 # Training parameters
 SEQ_LEN = 1024
-LR = 2e-4
+LR = 2e-5
 BATCH = 1
 ACCUM = 8  # Gradient accumulation steps
 EPOCHS = 1
@@ -36,3 +36,13 @@ BASE_OUTPUT_DIR = "./out-llama-lora"
 ADAPTER_DIR = f"{BASE_OUTPUT_DIR}/adapter"
 MERGED_DIR = f"{BASE_OUTPUT_DIR}/merged"
 TOKENIZER_DIR = f"{BASE_OUTPUT_DIR}/tokenizer"
+
+# Logging/Reporting
+REPORT_TO = "tensorboard"  # or "none", "wandb"
+LOG_DIR = f"{BASE_OUTPUT_DIR}/runs"
+
+# Reproducibility & training control (used if present)
+SEED = 42
+VAL_RATIO = 0.1
+EVAL_STEPS = 200
+ES_PATIENCE = 3
