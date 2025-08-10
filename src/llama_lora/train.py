@@ -188,13 +188,24 @@ def load_and_setup_model(cfg: DictConfig) -> Any:
         )
 
         # Latest best practices: auto device mapping, dtype, and Flash Attention
-        model = AutoModelForCausalLM.from_pretrained(
-            cfg.model.model_id,
-            device_map="auto",
-            torch_dtype="auto",
-            attn_implementation="flash_attention_2",
-            trust_remote_code=True,
-        )
+        # Try flash_attention_2 first, fall back to eager if not available
+        try:
+            model = AutoModelForCausalLM.from_pretrained(
+                cfg.model.model_id,
+                device_map="auto",
+                torch_dtype="auto",
+                attn_implementation="flash_attention_2",
+                trust_remote_code=True,
+            )
+        except ImportError:
+            logger.warning("FlashAttention2 not available, falling back to eager attention")
+            model = AutoModelForCausalLM.from_pretrained(
+                cfg.model.model_id,
+                device_map="auto",
+                torch_dtype="auto",
+                attn_implementation="eager",
+                trust_remote_code=True,
+            )
 
         # Configure for training
         model.config.use_cache = False
