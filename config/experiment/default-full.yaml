@@ -21,6 +21,9 @@ peft:
   lora_alpha: 64
   lora_dropout: 0.1
 
+output:
+  experiment_name: full-training
+
 logging:
   report_to: tensorboard
   project_name: llama-lora-full

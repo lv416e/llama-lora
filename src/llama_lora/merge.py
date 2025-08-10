@@ -40,7 +40,7 @@ def validate_adapter_directory(adapter_dir: str) -> None:
 
 
 def load_base_model(model_id: str) -> Any:
-    """Load base model with error handling.
+    """Load base model with error handling and Flash Attention fallback.
 
     Args:
         model_id: Model identifier.
@@ -52,14 +52,27 @@ def load_base_model(model_id: str) -> Any:
         ModelLoadingError: If model loading fails.
     """
     try:
-        logger.info(f"Loading base model '{model_id}'...")
-        return AutoModelForCausalLM.from_pretrained(
-            model_id,
-            device_map="auto",
-            torch_dtype="auto",
-            attn_implementation="flash_attention_2",
-            trust_remote_code=True,
-        )
+        logger.info(f"Loading base model '{model_id}' on CPU for merging...")
+
+        try:
+            return AutoModelForCausalLM.from_pretrained(
+                model_id,
+                device_map="cpu",
+                torch_dtype="auto",
+                attn_implementation="flash_attention_2",
+                trust_remote_code=True,
+            )
+        except Exception as flash_error:
+            logger.warning(
+                f"FlashAttention2 not available ({str(flash_error)}), falling back to eager attention"
+            )
+            return AutoModelForCausalLM.from_pretrained(
+                model_id,
+                device_map="cpu",
+                torch_dtype="auto",
+                attn_implementation="eager",
+                trust_remote_code=True,
+            )
     except Exception as e:
         raise ModelLoadingError(
             f"Failed to load base model '{model_id}': {str(e)}"
@@ -72,7 +85,7 @@ def load_peft_adapter(base_model: Any, adapter_dir: str, device: str) -> Any:
     Args:
         base_model: Base model to attach adapter to.
         adapter_dir: Path to adapter directory.
-        device: Target device.
+        device: Target device (should be 'cpu' for merging).
 
     Returns:
         PEFT model on specified device.
@@ -81,9 +94,13 @@ def load_peft_adapter(base_model: Any, adapter_dir: str, device: str) -> Any:
         AdapterError: If adapter loading fails.
     """
     try:
-        logger.info(f"Loading PEFT adapter from '{adapter_dir}'...")
+        logger.info(f"Loading PEFT adapter from '{adapter_dir}' on {device}...")
         peft_model = PeftModel.from_pretrained(base_model, adapter_dir)
-        return peft_model.to(device)
+
+        if device != "cpu":
+            logger.warning(f"Moving PEFT model from CPU to {device}")
+            return peft_model.to(device)
+        return peft_model
     except Exception as e:
         raise AdapterError(
             f"Failed to load PEFT adapter from '{adapter_dir}': {str(e)}"
@@ -158,32 +175,55 @@ def main(cfg: DictConfig) -> None:
     - Loads base model and PEFT adapter
     - Merges adapter weights into base model
     - Saves merged model and tokenizer
+    - Saves merge metadata
     """
     try:
         logger.info("Starting model merging process...")
 
-        # Use CPU for merging (less memory intensive)
+        from config.schema import save_experiment_metadata
+        from omegaconf import OmegaConf
+
+        pydantic_cfg = cfg.to_pydantic_config()
+        output_config = pydantic_cfg.output
+
         device = "cpu"
         logger.info(f"Using device: {device}")
 
-        adapter_dir = cfg.output.adapter_dir
+        logger.info("Using structured output paths:")
+        logger.info(f"  Adapter source: {output_config.adapter_dir}")
+        logger.info(f"  Tokenizer source: {output_config.tokenizer_dir}")
+        logger.info(f"  Merged output: {output_config.merged_dir}")
+
         model_id = cfg.model.model_id
-        merged_dir = cfg.output.merged_dir
-        tokenizer_dir = cfg.output.tokenizer_dir
 
         logger.info(
-            f"Configuration: Model={model_id}, Adapter={adapter_dir}, Output={merged_dir}"
+            f"Configuration: Model={model_id}, Adapter={output_config.adapter_dir}, Output={output_config.merged_dir}"
         )
 
-        validate_adapter_directory(adapter_dir)
+        validate_adapter_directory(output_config.adapter_dir)
         base_model = load_base_model(model_id)
 
-        peft_model = load_peft_adapter(base_model, adapter_dir, device)
-        merge_and_save_model(peft_model, merged_dir)
+        peft_model = load_peft_adapter(base_model, output_config.adapter_dir, device)
+        merge_and_save_model(peft_model, output_config.merged_dir)
 
-        save_tokenizer(tokenizer_dir, model_id, merged_dir)
+        save_tokenizer(output_config.tokenizer_dir, model_id, output_config.merged_dir)
 
-        logger.info(f"\nMerged model and tokenizer saved to: {merged_dir}")
+        merge_metadata = {
+            "operation": "model_merge",
+            "timestamp": OmegaConf.to_container(cfg, resolve=True),
+            "source_adapter": output_config.adapter_dir,
+            "source_tokenizer": output_config.tokenizer_dir,
+            "output_merged": output_config.merged_dir,
+            "base_model": model_id,
+            "device_used": device,
+        }
+
+        metadata_file = save_experiment_metadata(merge_metadata, output_config)
+        logger.info(f"Merge metadata saved to: {metadata_file}")
+
+        logger.info(
+            f"\nMerged model and tokenizer saved to: {output_config.merged_dir}"
+        )
         logger.info("You can now use this directory as a standard Hugging Face model.")
         logger.info("Model merging completed successfully!")
 

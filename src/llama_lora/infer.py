@@ -89,8 +89,7 @@ def load_base_model(model_id: str) -> Any:
     """
     try:
         logger.info(f"Loading base model '{model_id}' with auto optimization...")
-        
-        # Try FlashAttention2 first, fallback to eager if not available
+
         try:
             return AutoModelForCausalLM.from_pretrained(
                 model_id,
@@ -100,7 +99,9 @@ def load_base_model(model_id: str) -> Any:
                 trust_remote_code=True,
             )
         except ImportError:
-            logger.warning("FlashAttention2 not available, falling back to eager attention")
+            logger.warning(
+                "FlashAttention2 not available, falling back to eager attention"
+            )
             return AutoModelForCausalLM.from_pretrained(
                 model_id,
                 device_map="auto",
@@ -205,15 +206,22 @@ def main(args: argparse.Namespace) -> None:
         with hydra.initialize(version_base=None, config_path="../../config"):
             cfg = hydra.compose(config_name="config")
 
+        pydantic_cfg = cfg.to_pydantic_config()
+        output_config = pydantic_cfg.output
+
         device = DeviceManager.detect_device()
         logger.info(f"Using device: {device}")
 
-        validate_adapter_directory(cfg.output.adapter_dir)
+        logger.info("Using structured paths:")
+        logger.info(f"  Adapter: {output_config.adapter_dir}")
+        logger.info(f"  Tokenizer: {output_config.tokenizer_dir}")
+
+        validate_adapter_directory(output_config.adapter_dir)
         base_model = load_base_model(cfg.model.model_id)
 
-        model = load_peft_model(base_model, cfg.output.adapter_dir, device)
+        model = load_peft_model(base_model, output_config.adapter_dir, device)
         tokenizer = load_tokenizer_with_fallback(
-            cfg.output.tokenizer_dir, cfg.model.model_id
+            output_config.tokenizer_dir, cfg.model.model_id
         )
 
         logger.info(

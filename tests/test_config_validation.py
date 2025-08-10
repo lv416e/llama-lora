@@ -1,7 +1,7 @@
 """Tests for configuration validation functionality."""
 
 import pytest
-from omegaconf import OmegaConf
+from omegaconf import OmegaConf, ListConfig
 from src.llama_lora.utils.exceptions import ConfigurationError
 
 
@@ -118,7 +118,7 @@ class TestConfigValidation:
         assert cfg.training.lr > 0
         assert cfg.training.batch_size >= 1
         assert cfg.peft.r >= 1
-        assert isinstance(cfg.peft.target_modules, list)
+        assert isinstance(cfg.peft.target_modules, (list, ListConfig))
         assert len(cfg.peft.target_modules) > 0
 
     def test_configuration_type_validation(self):

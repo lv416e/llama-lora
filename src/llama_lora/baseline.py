@@ -11,7 +11,6 @@ from typing import Any, Dict, List
 
 import hydra
 import torch
-from omegaconf import DictConfig
 from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedTokenizer
 
 from .utils.common import DeviceManager, TokenizerUtils, setup_logging
@@ -76,7 +75,7 @@ def _run_inference_examples(
     separator = "-" * 50
     max_tokens = 64
 
-    simple_prompt = "日本語で簡潔に答えて。富士山の標高は？"
+    simple_prompt = "What is the height of Mount Fuji? Please answer briefly."
     print(f"Simple Prompt:\n{simple_prompt}\n")
     print("Response:")
     print(generate(model, tokenizer, simple_prompt, max_new_tokens=max_tokens))
@@ -85,9 +84,9 @@ def _run_inference_examples(
     messages = [
         {
             "role": "system",
-            "content": "あなたは有能な日本語アシスタントです。事実に基づき簡潔に答えます。",
+            "content": "You are a helpful assistant. Answer based on facts and be concise.",
         },
-        {"role": "user", "content": "富士山の標高は？"},
+        {"role": "user", "content": "What is the height of Mount Fuji?"},
     ]
 
     chat_display = "\n".join([f"{msg['role']}: {msg['content']}" for msg in messages])
@@ -96,33 +95,27 @@ def _run_inference_examples(
     print(generate_chat(model, tokenizer, messages, max_new_tokens=max_tokens))
     print(separator)
 
-    alpaca_prompt = (
-        "### Instruction:\n"
-        "富士山の標高を日本語で簡潔に答えてください。\n"
-        "### Input:\n\n"
-        "### Response:\n"
-    )
+    alpaca_prompt = "### Instruction:\nPlease provide the height of Mount Fuji in a brief answer.\n### Input:\n\n### Response:\n"
     print(f"Alpaca-style Prompt:\n{alpaca_prompt}\n")
     print("Response:")
     print(generate(model, tokenizer, alpaca_prompt, max_new_tokens=max_tokens))
     print(separator)
 
 
-def main(args) -> None:
+def main(args: argparse.Namespace) -> None:
     """Main function for baseline model inference using Hydra config."""
     try:
         logger.info("Starting baseline inference process...")
-        
+
         with hydra.initialize(version_base=None, config_path="../../config"):
             cfg = hydra.compose(config_name="config")
-        
+
         device = DeviceManager.detect_device()
         logger.info(f"Using device: {device}")
 
         model_id = cfg.model.model_id
         logger.info(f"Loading base model '{model_id}' with auto optimization...")
 
-        # Try FlashAttention2 first, fallback to eager if not available
         try:
             model = AutoModelForCausalLM.from_pretrained(
                 model_id,
@@ -131,8 +124,10 @@ def main(args) -> None:
                 attn_implementation="flash_attention_2",
                 trust_remote_code=True,
             ).eval()
-        except ImportError:
-            logger.warning("FlashAttention2 not available, falling back to eager attention")
+        except Exception as flash_error:
+            logger.warning(
+                f"FlashAttention2 not available ({str(flash_error)}), falling back to eager attention"
+            )
             model = AutoModelForCausalLM.from_pretrained(
                 model_id,
                 device_map="auto",

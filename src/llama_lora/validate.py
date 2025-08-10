@@ -135,17 +135,47 @@ class ConfigValidator:
             bool: True if validation passes.
         """
         try:
-            OutputConfig(**output_cfg)
+            # Create OutputConfig instance to trigger automatic path generation
+            pydantic_config = OutputConfig(**output_cfg)
         except ValidationError as e:
             self.errors.append(f"Output config validation failed: {e}")
             return False
 
+        # Validate base directory
         base_dir = Path(output_cfg.base_output_dir)
         try:
             base_dir.mkdir(parents=True, exist_ok=True)
         except PermissionError:
             self.errors.append(f"Cannot create output directory: {base_dir}")
             return False
+
+        # Validate experiment name
+        if not output_cfg.get("experiment_name"):
+            self.warnings.append("No experiment name specified, using 'default'")
+
+        # Check for conflicting manual path specifications
+        manual_paths = [
+            "adapter_dir",
+            "tokenizer_dir",
+            "merged_dir",
+            "log_dir",
+            "metadata_dir",
+        ]
+        has_manual_paths = any(output_cfg.get(path) for path in manual_paths)
+
+        if has_manual_paths:
+            self.warnings.append(
+                "Manual path specifications detected. These will be ignored in favor of "
+                "structured auto-generated paths. Remove manual paths from config to avoid confusion."
+            )
+
+        # Log the structured paths that will be used
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.info(
+            f"Structured output paths will be generated under: {pydantic_config.base_output_dir}/experiments/{pydantic_config.experiment_name}/runs/{{run_id}}/"
+        )
 
         return True
 

@@ -7,7 +7,7 @@ proper error handling, and structured logging.
 """
 
 import warnings
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 import hydra
 from datasets import load_dataset
@@ -76,7 +76,6 @@ def validate_and_log_config(cfg: DictConfig) -> None:
     logger.info(f"Output Dir: {cfg.output.base_output_dir}")
     logger.info("=" * 50)
 
-    # Basic validation (Pydantic handles most validation automatically)
     if cfg.training.lr <= 0:
         raise ConfigurationError(
             f"Learning rate must be positive, got {cfg.training.lr}"
@@ -117,7 +116,7 @@ def load_and_setup_tokenizer(model_id: str) -> AutoTokenizer:
 
 def load_and_process_dataset(
     cfg: DictConfig, tokenizer: AutoTokenizer
-) -> tuple[Any, Any]:
+) -> Tuple[Any, Any]:
     """Load and process dataset with error handling.
 
     Args:
@@ -181,8 +180,6 @@ def load_and_setup_model(cfg: DictConfig) -> Any:
             f"Loading base model '{cfg.model.model_id}' with auto optimization..."
         )
 
-        # Latest best practices: auto device mapping, dtype, and Flash Attention
-        # Try flash_attention_2 first, fall back to eager if not available
         try:
             model = AutoModelForCausalLM.from_pretrained(
                 cfg.model.model_id,
@@ -213,7 +210,7 @@ def load_and_setup_model(cfg: DictConfig) -> Any:
             r=cfg.peft.r,
             lora_alpha=cfg.peft.lora_alpha,
             lora_dropout=cfg.peft.lora_dropout,
-            target_modules=list(cfg.peft.target_modules),  # Convert ListConfig to list
+            target_modules=list(cfg.peft.target_modules),
             use_dora=cfg.model.use_dora,
         )
 
@@ -227,11 +224,14 @@ def load_and_setup_model(cfg: DictConfig) -> Any:
         raise ModelLoadingError(f"Failed to load or setup model: {str(e)}") from e
 
 
-def setup_training_arguments(cfg: DictConfig, device: str) -> TrainingArguments:
+def setup_training_arguments(
+    cfg: DictConfig, output_config, device: str
+) -> TrainingArguments:
     """Setup training arguments with proper configuration.
 
     Args:
         cfg: Configuration object.
+        output_config: Unified output configuration with structured paths.
         device: Target device.
 
     Returns:
@@ -239,10 +239,12 @@ def setup_training_arguments(cfg: DictConfig, device: str) -> TrainingArguments:
     """
     use_fp16, use_bf16 = DeviceManager.setup_device_specific_settings(device)
 
-    PathManager.ensure_directory(cfg.output.base_output_dir)
+    # Ensure directories exist using structured paths
+    PathManager.ensure_directory(output_config.adapter_dir)
+    PathManager.ensure_directory(output_config.log_dir)
 
     return TrainingArguments(
-        output_dir=cfg.output.base_output_dir,
+        output_dir=output_config.adapter_dir,
         per_device_train_batch_size=cfg.training.batch_size,
         gradient_accumulation_steps=cfg.training.gradient_accumulation_steps,
         num_train_epochs=cfg.training.epochs,
@@ -251,7 +253,7 @@ def setup_training_arguments(cfg: DictConfig, device: str) -> TrainingArguments:
         bf16=use_bf16,
         dataloader_pin_memory=False,
         logging_steps=10,
-        logging_dir=cfg.output.log_dir,
+        logging_dir=output_config.log_dir,
         save_strategy="steps",
         save_steps=200,
         save_total_limit=2,
@@ -267,11 +269,11 @@ def setup_training_arguments(cfg: DictConfig, device: str) -> TrainingArguments:
     )
 
 
-def save_artifacts(cfg: DictConfig, model: Any, tokenizer: AutoTokenizer) -> None:
+def save_artifacts(output_config, model: Any, tokenizer: AutoTokenizer) -> None:
     """Save trained artifacts with error handling.
 
     Args:
-        cfg: Configuration object.
+        output_config: Unified output configuration with structured paths.
         model: Trained model.
         tokenizer: Tokenizer.
 
@@ -279,13 +281,13 @@ def save_artifacts(cfg: DictConfig, model: Any, tokenizer: AutoTokenizer) -> Non
         TrainingError: If saving fails.
     """
     try:
-        logger.info(f"Saving adapter to {cfg.output.adapter_dir}")
-        PathManager.ensure_directory(cfg.output.adapter_dir)
-        model.save_pretrained(cfg.output.adapter_dir)
+        logger.info(f"Saving adapter to {output_config.adapter_dir}")
+        PathManager.ensure_directory(output_config.adapter_dir)
+        model.save_pretrained(output_config.adapter_dir)
 
-        logger.info(f"Saving tokenizer to {cfg.output.tokenizer_dir}")
-        PathManager.ensure_directory(cfg.output.tokenizer_dir)
-        tokenizer.save_pretrained(cfg.output.tokenizer_dir)
+        logger.info(f"Saving tokenizer to {output_config.tokenizer_dir}")
+        PathManager.ensure_directory(output_config.tokenizer_dir)
+        tokenizer.save_pretrained(output_config.tokenizer_dir)
 
         logger.info("All artifacts saved successfully")
 
@@ -310,6 +312,24 @@ def main(cfg: DictConfig) -> None:
     """
     try:
         validate_and_log_config(cfg)
+
+        from config.schema import save_experiment_metadata
+
+        pydantic_cfg = cfg.to_pydantic_config()
+        output_config = pydantic_cfg.output
+
+        logger.info("Using structured output paths:")
+        logger.info(f"  Base: {output_config.base_output_dir}")
+        logger.info(f"  Experiment: {output_config.experiment_name}")
+        logger.info(f"  Run ID: {output_config.run_id}")
+        logger.info(f"  Adapter: {output_config.adapter_dir}")
+        logger.info(f"  Logs: {output_config.log_dir}")
+
+        metadata_file = save_experiment_metadata(
+            OmegaConf.to_container(cfg, resolve=True), output_config
+        )
+        logger.info(f"Experiment metadata saved to: {metadata_file}")
+
         device = DeviceManager.detect_device()
         logger.info(f"Using device: {device}")
         SeedManager.setup_seed(cfg.training.seed)
@@ -317,16 +337,15 @@ def main(cfg: DictConfig) -> None:
         tokenizer = load_and_setup_tokenizer(cfg.model.model_id)
         train_dataset, eval_dataset = load_and_process_dataset(cfg, tokenizer)
 
-        # Setup data collator with dynamic padding for memory efficiency
         collator = DataCollatorForLanguageModeling(
             tokenizer=tokenizer,
             mlm=False,
-            pad_to_multiple_of=8,  # Optimize for tensor cores
+            pad_to_multiple_of=8,
             return_tensors="pt",
         )
 
         model = load_and_setup_model(cfg)
-        training_args = setup_training_arguments(cfg, device)
+        training_args = setup_training_arguments(cfg, output_config, device)
 
         trainer = Trainer(
             model=model,
@@ -345,7 +364,7 @@ def main(cfg: DictConfig) -> None:
         trainer.train()
         logger.info("Training finished successfully")
 
-        save_artifacts(cfg, model, tokenizer)
+        save_artifacts(output_config, model, tokenizer)
 
         logger.info("Training pipeline completed successfully!")
         logger.info(f"Final configuration:\n{OmegaConf.to_yaml(cfg)}")

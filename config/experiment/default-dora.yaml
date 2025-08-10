@@ -14,6 +14,9 @@ training:
 dataset:
   dataset_split: "train[:10%]"
 
+output:
+  experiment_name: dora-comparison
+
 logging:
   report_to: tensorboard
   project_name: llama-dora-default

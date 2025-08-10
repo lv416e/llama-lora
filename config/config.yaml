@@ -38,10 +38,14 @@ peft:
 
 output:
   base_output_dir: ./outputs
-  adapter_dir: ./outputs/adapter
-  tokenizer_dir: ./outputs/tokenizer
-  merged_dir: ./outputs/merged
-  log_dir: ./outputs/runs
+  experiment_name: default-quick
+  # All other paths will be auto-generated in the structured format:
+  # ./outputs/experiments/{experiment_name}/runs/{run_id}/
+  #   ├── artifacts/adapter/
+  #   ├── artifacts/tokenizer/
+  #   ├── artifacts/merged/
+  #   ├── logs/
+  #   └── metadata/
 
 logging:
   report_to: tensorboard

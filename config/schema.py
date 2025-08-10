@@ -6,7 +6,7 @@ are organized into logical groups for better maintainability and validation.
 """
 
 from dataclasses import dataclass, field
-from typing import List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from hydra.core.config_store import ConfigStore
 from hydra.core.hydra_config import HydraConfig
@@ -44,9 +44,9 @@ class HydraPEFTConfig:
     r: int = 16
     lora_alpha: int = 32
     lora_dropout: float = 0.1
-    target_modules: list = None
+    target_modules: Optional[List[str]] = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.target_modules is None:
             # Common LoRA targets for LLaMA-family models
             self.target_modules = [
@@ -63,10 +63,133 @@ class HydraPEFTConfig:
 @dataclass
 class HydraOutputConfig:
     base_output_dir: str = "./outputs"
-    adapter_dir: str = "./outputs/adapter"
-    tokenizer_dir: str = "./outputs/tokenizer"
-    merged_dir: str = "./outputs/merged"
-    log_dir: str = "./outputs/runs"
+    experiment_name: str = "default"
+    run_id: str = ""
+    adapter_dir: str = ""
+    tokenizer_dir: str = ""
+    merged_dir: str = ""
+    log_dir: str = ""
+    metadata_dir: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.run_id:
+            from datetime import datetime
+
+            self.run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        experiment_base = f"{self.base_output_dir}/experiments/{self.experiment_name}"
+        run_base = f"{experiment_base}/runs/{self.run_id}"
+
+        if not self.adapter_dir:
+            self.adapter_dir = f"{run_base}/artifacts/adapter"
+        if not self.tokenizer_dir:
+            self.tokenizer_dir = f"{run_base}/artifacts/tokenizer"
+        if not self.merged_dir:
+            self.merged_dir = f"{run_base}/artifacts/merged"
+        if not self.log_dir:
+            self.log_dir = f"{run_base}/logs"
+        if not self.metadata_dir:
+            self.metadata_dir = f"{run_base}/metadata"
+
+
+def save_experiment_metadata(
+    cfg_dict: Dict[str, Any], output_config: "OutputConfig"
+) -> str:
+    """Save experiment metadata to metadata directory."""
+    import json
+    import os
+    from datetime import datetime
+
+    metadata_dir = output_config.metadata_dir
+    os.makedirs(metadata_dir, exist_ok=True)
+
+    # Create metadata
+    metadata = {
+        "experiment_name": output_config.experiment_name,
+        "run_id": output_config.run_id,
+        "timestamp": datetime.now().isoformat(),
+        "config": cfg_dict,
+        "output_paths": {
+            "adapter_dir": output_config.adapter_dir,
+            "tokenizer_dir": output_config.tokenizer_dir,
+            "merged_dir": output_config.merged_dir,
+            "log_dir": output_config.log_dir,
+            "metadata_dir": output_config.metadata_dir,
+        },
+    }
+
+    # Save metadata
+    metadata_file = os.path.join(metadata_dir, "experiment_metadata.json")
+    with open(metadata_file, "w") as f:
+        json.dump(metadata, f, indent=2)
+
+    return metadata_file
+
+
+def get_tensorboard_log_dir(output_config: "OutputConfig") -> str:
+    """Get TensorBoard log directory path."""
+    return output_config.log_dir
+
+
+def start_tensorboard(output_config: "OutputConfig", port: int = 6006) -> str:
+    """Start TensorBoard server for the experiment.
+
+    Args:
+        output_config: Output configuration
+        port: Port to run TensorBoard on
+
+    Returns:
+        Command to start TensorBoard
+    """
+    log_dir = get_tensorboard_log_dir(output_config)
+    command = f"tensorboard --logdir {log_dir} --port {port}"
+    print(f"To start TensorBoard, run: {command}")
+    print(f"Then open http://localhost:{port} in your browser")
+    return command
+
+
+def get_experiment_comparison_command(
+    base_output_dir: str, experiment_names: List[str]
+) -> str:
+    """Generate TensorBoard command for comparing multiple experiments.
+
+    Args:
+        base_output_dir: Base output directory
+        experiment_names: List of experiment names to compare
+
+    Returns:
+        Command to start TensorBoard with multiple experiments
+    """
+    log_dirs = []
+    for exp_name in experiment_names:
+        # Use structured path format: experiments/{exp_name}/runs/*/logs
+        exp_log_dir = f"{base_output_dir}/experiments/{exp_name}/runs"
+        log_dirs.append(f"{exp_name}:{exp_log_dir}")
+
+    logdir_arg = ",".join(log_dirs)
+    command = f"tensorboard --logdir_spec {logdir_arg}"
+    print(f"To compare experiments, run: {command}")
+    print("Note: This will aggregate logs from all runs within each experiment")
+    return command
+
+
+def get_single_experiment_tensorboard_command(
+    base_output_dir: str, experiment_name: str
+) -> str:
+    """Generate TensorBoard command for viewing all runs of a single experiment.
+
+    Args:
+        base_output_dir: Base output directory
+        experiment_name: Name of the experiment to view
+
+    Returns:
+        Command to start TensorBoard for the experiment
+    """
+    log_dir = f"{base_output_dir}/experiments/{experiment_name}/runs"
+    command = f"tensorboard --logdir {log_dir}"
+    print(f"To view all runs of experiment '{experiment_name}', run: {command}")
+    print("Then open http://localhost:6006 in your browser")
+    return command
 
 
 @dataclass
@@ -86,7 +209,7 @@ class HydraConfig:  # noqa
     output: HydraOutputConfig = field(default_factory=HydraOutputConfig)
     logging: HydraLoggingConfig = field(default_factory=HydraLoggingConfig)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.peft.target_modules is None:
             self.peft.target_modules = ["q_proj", "v_proj"]
 
@@ -120,10 +243,13 @@ class HydraConfig:  # noqa
             ),
             output=OutputConfig(
                 base_output_dir=self.output.base_output_dir,
-                adapter_dir=self.output.adapter_dir,
-                tokenizer_dir=self.output.tokenizer_dir,
-                merged_dir=self.output.merged_dir,
-                log_dir=self.output.log_dir,
+                experiment_name=self.output.experiment_name,
+                run_id="",  # Let OutputConfig generate this automatically
+                adapter_dir="",  # Let OutputConfig generate this automatically
+                tokenizer_dir="",  # Let OutputConfig generate this automatically
+                merged_dir="",  # Let OutputConfig generate this automatically
+                log_dir="",  # Let OutputConfig generate this automatically
+                metadata_dir="",  # Let OutputConfig generate this automatically
             ),
             logging=LoggingConfig(
                 report_to=self.logging.report_to,
@@ -201,16 +327,35 @@ class OutputConfig(BaseModel):
     base_output_dir: str = Field(
         default="./outputs", description="Base output directory"
     )
-    adapter_dir: str = Field(
-        default="./outputs/adapter", description="Adapter output directory"
+    experiment_name: str = Field(
+        default="default", description="Experiment name for organization"
     )
-    tokenizer_dir: str = Field(
-        default="./outputs/tokenizer", description="Tokenizer output directory"
-    )
-    merged_dir: str = Field(
-        default="./outputs/merged", description="Merged model output directory"
-    )
-    log_dir: str = Field(default="./outputs/runs", description="Logs output directory")
+    run_id: str = Field(default="", description="Run ID (auto-generated if empty)")
+    adapter_dir: str = Field(default="", description="Adapter output directory")
+    tokenizer_dir: str = Field(default="", description="Tokenizer output directory")
+    merged_dir: str = Field(default="", description="Merged model output directory")
+    log_dir: str = Field(default="", description="Logs output directory")
+    metadata_dir: str = Field(default="", description="Metadata output directory")
+
+    def model_post_init(self, __context) -> None:
+        if not self.run_id:
+            from datetime import datetime
+
+            self.run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        experiment_base = f"{self.base_output_dir}/experiments/{self.experiment_name}"
+        run_base = f"{experiment_base}/runs/{self.run_id}"
+
+        if not self.adapter_dir:
+            self.adapter_dir = f"{run_base}/artifacts/adapter"
+        if not self.tokenizer_dir:
+            self.tokenizer_dir = f"{run_base}/artifacts/tokenizer"
+        if not self.merged_dir:
+            self.merged_dir = f"{run_base}/artifacts/merged"
+        if not self.log_dir:
+            self.log_dir = f"{run_base}/logs"
+        if not self.metadata_dir:
+            self.metadata_dir = f"{run_base}/metadata"
 
 
 class LoggingConfig(BaseModel):

@@ -3,6 +3,7 @@
 import pytest
 import tempfile
 import os
+import sys
 from pathlib import Path
 from src.llama_lora.utils.common import PathManager
 
@@ -64,7 +65,13 @@ class TestPathManager:
 
     def test_ensure_directory_with_permission_error(self):
         """Test ensure_directory behavior with permission error."""
-        # Try to create directory in root (should fail on most systems)
+        # Skip on macOS where /root is read-only filesystem
+        if sys.platform == "darwin":
+            pytest.skip(
+                "Permission test not reliable on macOS due to read-only filesystem"
+            )
+
+        # Try to create directory in root (should fail on most Linux systems)
         restricted_path = "/root/restricted_directory"
 
         with pytest.raises(PermissionError) as exc_info:
