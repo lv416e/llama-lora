@@ -1,0 +1,29 @@
+[2025-08-10 20:48:57,591][src.llama_lora.utils.common][INFO] - Configuration Summary:
+[2025-08-10 20:48:57,591][src.llama_lora.utils.common][INFO] - ==================================================
+[2025-08-10 20:48:57,591][src.llama_lora.utils.common][INFO] - Model: microsoft/DialoGPT-small
+[2025-08-10 20:48:57,591][src.llama_lora.utils.common][INFO] - Use DoRA: False
+[2025-08-10 20:48:57,591][src.llama_lora.utils.common][INFO] - Dataset: tatsu-lab/alpaca (train)
+[2025-08-10 20:48:57,591][src.llama_lora.utils.common][INFO] - Learning Rate: 2e-05
+[2025-08-10 20:48:57,591][src.llama_lora.utils.common][INFO] - Batch Size: 4
+[2025-08-10 20:48:57,591][src.llama_lora.utils.common][INFO] - Epochs: 1
+[2025-08-10 20:48:57,591][src.llama_lora.utils.common][INFO] - LoRA Rank: 16
+[2025-08-10 20:48:57,591][src.llama_lora.utils.common][INFO] - Output Dir: ./output
+[2025-08-10 20:48:57,591][src.llama_lora.utils.common][INFO] - ==================================================
+[2025-08-10 20:48:57,591][src.llama_lora.utils.common][INFO] - Configuration validation successful!
+[2025-08-10 20:48:57,602][src.llama_lora.utils.common][INFO] - Using device: mps
+[2025-08-10 20:48:57,604][src.llama_lora.utils.common][INFO] - Loading tokenizer from 'microsoft/DialoGPT-small'...
+[2025-08-10 20:48:58,157][src.llama_lora.utils.common][INFO] - Loading dataset tatsu-lab/alpaca...
+[2025-08-10 20:49:01,240][src.llama_lora.utils.common][INFO] - Processing dataset...
+[2025-08-10 20:49:05,221][src.llama_lora.utils.common][INFO] - Splitting dataset...
+[2025-08-10 20:49:05,234][src.llama_lora.utils.common][INFO] - Dataset loaded: 49401 train, 2601 eval samples
+[2025-08-10 20:49:05,235][src.llama_lora.utils.common][INFO] - Loading base model 'microsoft/DialoGPT-small'...
+[2025-08-10 20:49:06,040][src.llama_lora.utils.common][INFO] - Setting up PEFT with LoRA/DoRA...
+[2025-08-10 20:49:06,071][src.llama_lora.utils.common][INFO] - Trainable parameters:
+[2025-08-10 20:49:06,272][src.llama_lora.utils.common][INFO] - Starting training...
+[2025-08-10 20:49:06,272][src.llama_lora.utils.common][ERROR] - Training failed: No valid checkpoint found in output directory (./output)
+Traceback (most recent call last):
+  File "/Users/s23736/Documents/001_develop/002_products/003_personal/llama-lora/src/llama_lora/train.py", line 337, in main
+    trainer.train(resume_from_checkpoint=True)
+  File "/Users/s23736/Documents/001_develop/002_products/003_personal/llama-lora/.venv/lib/python3.12/site-packages/transformers/trainer.py", line 2206, in train
+    raise ValueError(f"No valid checkpoint found in output directory ({args.output_dir})")
+ValueError: No valid checkpoint found in output directory (./output)

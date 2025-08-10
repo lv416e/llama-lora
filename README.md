@@ -18,38 +18,42 @@ A simple project to fine-tune Llama models using PEFT (LoRA/DoRA) from the Huggi
 
 ## Usage
 
-This project is organized into several scripts inside the `scripts/` directory.
+The project's core logic is located in the `src/llama_lora/` package. You can run the different workflows as modules using `uv run`.
 
 ### 1. (Optional) Check Base Model Performance
 
-Before fine-tuning, you can check the performance of the original, pre-trained model:
+Before fine-tuning, check the original model's performance. This uses the default configuration from `config/`.
 
 ```bash
-python scripts/baseline_inference.py
+uv run python -m llama_lora.baseline
 ```
 
 ### 2. Run Fine-Tuning
 
-This script will fine-tune the model based on the settings in `scripts/config.py`. The resulting adapter will be saved to the output directory (default: `./out-llama-lora/`).
+Run the main training pipeline. This uses the Hydra configuration defined in the `config/` directory. You can override any setting from the command line.
 
 ```bash
-python scripts/train.py
+# Run with default settings
+uv run python -m llama_lora.train
+
+# Override settings
+uv run python -m llama_lora.train training.lr=1e-5 model.seq_len=2048
 ```
 
 ### 3. Run Inference with Fine-Tuned Model
 
-After training is complete, you can test the fine-tuned model with a custom prompt:
+After training, test the fine-tuned model with a custom prompt.
 
 ```bash
-python scripts/infer.py "Your prompt here"
+uv run python -m llama_lora.infer "Your prompt here"
 ```
 
 ### 4. (Optional) Merge the Adapter
 
-To create a standalone model, you can merge the adapter weights into the base model:
+Create a standalone model by merging the adapter weights.
 
 ```bash
-python scripts/merge.py
+uv run python -m llama_lora.merge
 ```
 
 ### TensorBoard (Logging)

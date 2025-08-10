@@ -17,3 +17,6 @@ dependencies = [
     "transformers>=4.55.0",
     "wandb>=0.21.1",
 ]
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,10 @@
+defaults:
+  - base_config
+  - model: small
+  - dataset: alpaca
+  - training: quick
+  - peft: lora_16
+  - _self_
+
+# Override any default values here if needed
+# All other configurations come from the structured config classes

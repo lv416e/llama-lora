@@ -1,0 +1,17 @@
+# @package _global_
+defaults:
+  - override /training: quick
+  - override /dataset: alpaca
+  
+# Quick test configuration for development
+training:
+  epochs: 1
+  eval_steps: 50
+  lr: 3e-5
+  
+dataset:
+  dataset_split: "train[:0.1%]"
+  val_ratio: 0.2
+
+logging:
+  report_to: "none"  # Disable logging for quick tests
