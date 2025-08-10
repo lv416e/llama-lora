@@ -6,14 +6,14 @@ defaults:
 # DoRA vs LoRA comparison experiment
 model:
   use_dora: true
-  
+
 training:
   epochs: 3
   lr: 2e-5
-  
+
 dataset:
   dataset_split: "train[:10%]"
-  
+
 logging:
-  report_to: "tensorboard"
-  project_name: "dora-vs-lora"
+  report_to: tensorboard
+  project_name: llama-dora-default

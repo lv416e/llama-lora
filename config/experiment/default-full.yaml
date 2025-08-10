@@ -11,7 +11,7 @@ training:
   gradient_accumulation_steps: 16
   eval_steps: 100
   early_stopping_patience: 5
-  
+
 dataset:
   dataset_split: "train"
   val_ratio: 0.05
@@ -22,5 +22,5 @@ peft:
   lora_dropout: 0.1
 
 logging:
-  report_to: "tensorboard"
-  project_name: "llama-lora-full"
+  report_to: tensorboard
+  project_name: llama-lora-full

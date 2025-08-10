@@ -71,7 +71,7 @@ class HydraOutputConfig:
 
 @dataclass
 class HydraLoggingConfig:
-    report_to: str = "none"
+    report_to: str = "tensorboard"
     project_name: Optional[str] = None
 
 
@@ -137,25 +137,17 @@ class HydraConfig:  # noqa
 class ModelConfig(BaseModel):
     """Model configuration with validation."""
 
-    model_id: str = Field(
-        default="meta-llama/Llama-3.2-1B-Instruct", description="Model identifier"
-    )
+    model_id: str = Field(default="meta-llama/Llama-3.2-1B-Instruct", description="Model identifier")
     use_dora: bool = Field(default=False, description="Use DoRA instead of LoRA")
-    seq_len: int = Field(
-        default=512, ge=1, le=8192, description="Maximum sequence length"
-    )
+    seq_len: int = Field(default=512, ge=1, le=8192, description="Maximum sequence length")
 
 
 class DatasetConfig(BaseModel):
     """Dataset configuration with validation."""
 
-    dataset_id: str = Field(
-        default="tatsu-lab/alpaca", description="Dataset identifier"
-    )
+    dataset_id: str = Field(default="tatsu-lab/alpaca", description="Dataset identifier")
     dataset_split: str = Field(default="train", description="Dataset split to use")
-    val_ratio: float = Field(
-        default=0.1, ge=0.0, le=0.5, description="Validation split ratio"
-    )
+    val_ratio: float = Field(default=0.1, ge=0.0, le=0.5, description="Validation split ratio")
 
 
 class TrainingConfig(BaseModel):
@@ -163,17 +155,11 @@ class TrainingConfig(BaseModel):
 
     lr: float = Field(default=2e-4, gt=0.0, lt=1.0, description="Learning rate")
     batch_size: int = Field(default=4, ge=1, le=128, description="Training batch size")
-    gradient_accumulation_steps: int = Field(
-        default=4, ge=1, description="Gradient accumulation steps"
-    )
-    epochs: int = Field(
-        default=3, ge=1, le=100, description="Number of training epochs"
-    )
+    gradient_accumulation_steps: int = Field(default=4, ge=1, description="Gradient accumulation steps")
+    epochs: int = Field(default=3, ge=1, le=100, description="Number of training epochs")
     seed: int = Field(default=42, ge=0, description="Random seed")
     eval_steps: int = Field(default=200, ge=1, description="Evaluation frequency")
-    early_stopping_patience: int = Field(
-        default=3, ge=1, description="Early stopping patience"
-    )
+    early_stopping_patience: int = Field(default=3, ge=1, description="Early stopping patience")
 
 
 class PEFTConfig(BaseModel):
@@ -199,30 +185,18 @@ class PEFTConfig(BaseModel):
 class OutputConfig(BaseModel):
     """Output configuration with validation."""
 
-    base_output_dir: str = Field(
-        default="./outputs", description="Base output directory"
-    )
-    adapter_dir: str = Field(
-        default="./outputs/adapter", description="Adapter output directory"
-    )
-    tokenizer_dir: str = Field(
-        default="./outputs/tokenizer", description="Tokenizer output directory"
-    )
-    merged_dir: str = Field(
-        default="./outputs/merged", description="Merged model output directory"
-    )
+    base_output_dir: str = Field(default="./outputs", description="Base output directory")
+    adapter_dir: str = Field(default="./outputs/adapter", description="Adapter output directory")
+    tokenizer_dir: str = Field(default="./outputs/tokenizer", description="Tokenizer output directory")
+    merged_dir: str = Field(default="./outputs/merged", description="Merged model output directory")
     log_dir: str = Field(default="./outputs/runs", description="Logs output directory")
 
 
 class LoggingConfig(BaseModel):
     """Logging configuration with validation."""
 
-    report_to: Literal["none", "wandb", "tensorboard"] = Field(
-        default="none", description="Logging backend"
-    )
-    project_name: Optional[str] = Field(
-        default=None, description="Experiment or project name for logging"
-    )
+    report_to: Literal["none", "wandb", "tensorboard"] = Field(default="none", description="Logging backend")
+    project_name: Optional[str] = Field(default=None, description="Experiment or project name for logging")
 
 
 class Config(BaseModel):
@@ -255,9 +229,7 @@ class Config(BaseModel):
             )
 
         # Validate effective batch size
-        effective_batch = (
-            self.training.batch_size * self.training.gradient_accumulation_steps
-        )
+        effective_batch = self.training.batch_size * self.training.gradient_accumulation_steps
         if effective_batch > 128:
             raise ValueError(
                 f"Effective batch size ({effective_batch}) is very large. "
@@ -280,9 +252,7 @@ cs.store(
 )
 
 cs.store(group="dataset", name="alpaca", node=HydraDatasetConfig())
-cs.store(
-    group="dataset", name="alpaca_full", node=HydraDatasetConfig(dataset_split="train")
-)
+cs.store(group="dataset", name="alpaca_full", node=HydraDatasetConfig(dataset_split="train"))
 
 cs.store(group="training", name="quick", node=HydraTrainingConfig(epochs=1, lr=2e-5))
 cs.store(group="training", name="standard", node=HydraTrainingConfig(epochs=3, lr=1e-5))

@@ -1,11 +1,40 @@
 defaults:
-  - base_config    # Schema validation
-  - _self_         # Override order
+  - _self_
 
-# Essential defaults only
-logging:
-  report_to: none
-  project_name: null
+# Minimal configuration - use experiment configs for full functionality
+# Example: uv run python -m llama_lora.train --config-name=experiment/default
+
+model:
+  model_id: meta-llama/Llama-3.2-1B-Instruct
+  use_dora: false
+  seq_len: 1024
+
+dataset:
+  dataset_id: tatsu-lab/alpaca
+  dataset_split: "train[:1%]"
+  val_ratio: 0.1
+
+training:
+  lr: 2e-5
+  batch_size: 1
+  gradient_accumulation_steps: 8
+  epochs: 1
+  seed: 42
+  eval_steps: 50
+  early_stopping_patience: 3
+
+peft:
+  r: 8
+  lora_alpha: 16
+  lora_dropout: 0.1
 
 output:
   base_output_dir: ./outputs
+  adapter_dir: ./outputs/adapter
+  tokenizer_dir: ./outputs/tokenizer
+  merged_dir: ./outputs/merged
+  log_dir: ./outputs/runs
+
+logging:
+  report_to: tensorboard
+  project_name: llama-lora-default
