@@ -54,7 +54,13 @@ def load_base_model(model_id: str) -> Any:
     """
     try:
         logger.info(f"Loading base model '{model_id}'...")
-        return AutoModelForCausalLM.from_pretrained(model_id)
+        return AutoModelForCausalLM.from_pretrained(
+            model_id,
+            device_map="auto",
+            torch_dtype="auto",
+            attn_implementation="flash_attention_2",
+            trust_remote_code=True,
+        )
     except Exception as e:
         raise ModelLoadingError(
             f"Failed to load base model '{model_id}': {str(e)}"

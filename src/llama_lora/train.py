@@ -171,7 +171,7 @@ def load_and_process_dataset(
 
 
 def load_and_setup_model(cfg: DictConfig) -> Any:
-    """Load and configure model with PEFT setup.
+    """Load and configure model with PEFT setup using latest best practices.
 
     Args:
         cfg: Configuration object.
@@ -183,8 +183,16 @@ def load_and_setup_model(cfg: DictConfig) -> Any:
         ModelLoadingError: If model loading fails.
     """
     try:
-        logger.info(f"Loading base model '{cfg.model.model_id}'...")
-        model = AutoModelForCausalLM.from_pretrained(cfg.model.model_id)
+        logger.info(f"Loading base model '{cfg.model.model_id}' with auto optimization...")
+        
+        # Latest best practices: auto device mapping, dtype, and Flash Attention
+        model = AutoModelForCausalLM.from_pretrained(
+            cfg.model.model_id,
+            device_map="auto",
+            torch_dtype="auto",
+            attn_implementation="flash_attention_2",
+            trust_remote_code=True,
+        )
 
         # Configure for training
         model.config.use_cache = False
@@ -308,8 +316,13 @@ def main(cfg: DictConfig) -> None:
         # Load and process dataset
         train_dataset, eval_dataset = load_and_process_dataset(cfg, tokenizer)
 
-        # Setup data collator
-        collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
+        # Setup data collator with dynamic padding for memory efficiency
+        collator = DataCollatorForLanguageModeling(
+            tokenizer=tokenizer, 
+            mlm=False,
+            pad_to_multiple_of=8,  # Optimize for tensor cores
+            return_tensors="pt"
+        )
 
         # Load and setup model
         model = load_and_setup_model(cfg)

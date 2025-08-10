@@ -121,7 +121,13 @@ def main(cfg: DictConfig) -> None:
         model_id = cfg.model.model_id
         logger.info(f"Loading base model {model_id}...")
 
-        model = AutoModelForCausalLM.from_pretrained(model_id).to(device).eval()
+        model = AutoModelForCausalLM.from_pretrained(
+            model_id,
+            device_map="auto",
+            torch_dtype="auto",
+            attn_implementation="flash_attention_2",
+            trust_remote_code=True,
+        ).eval()
 
         tokenizer = AutoTokenizer.from_pretrained(model_id, use_fast=True)
         tokenizer = TokenizerUtils.setup_tokenizer(tokenizer)

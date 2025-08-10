@@ -73,7 +73,7 @@ def validate_adapter_directory(adapter_dir: str) -> None:
 
 
 def load_base_model(model_id: str) -> Any:
-    """Load base model with error handling.
+    """Load base model with latest optimization techniques.
 
     Args:
         model_id: Model identifier.
@@ -85,8 +85,14 @@ def load_base_model(model_id: str) -> Any:
         ModelLoadingError: If model loading fails.
     """
     try:
-        logger.info(f"Loading base model '{model_id}'...")
-        return AutoModelForCausalLM.from_pretrained(model_id)
+        logger.info(f"Loading base model '{model_id}' with auto optimization...")
+        return AutoModelForCausalLM.from_pretrained(
+            model_id,
+            device_map="auto",
+            torch_dtype="auto",
+            attn_implementation="flash_attention_2",
+            trust_remote_code=True,
+        )
     except Exception as e:
         raise ModelLoadingError(
             f"Failed to load base model '{model_id}': {str(e)}"
