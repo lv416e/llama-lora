@@ -48,7 +48,6 @@ class ConfigValidator:
             self.errors.append(f"Model config validation failed: {e}")
             return False
 
-        # Additional semantic checks
         if model_cfg.seq_len > 4096:
             self.warnings.append(
                 f"Large sequence length ({model_cfg.seq_len}) may cause memory issues"
@@ -71,7 +70,6 @@ class ConfigValidator:
             self.errors.append(f"Training config validation failed: {e}")
             return False
 
-        # Additional semantic checks
         if training_cfg.lr > 1e-3:
             self.warnings.append(
                 f"High learning rate ({training_cfg.lr}) may cause instability"
@@ -102,7 +100,6 @@ class ConfigValidator:
             self.errors.append(f"PEFT config validation failed: {e}")
             return False
 
-        # Check LoRA parameter relationships
         if peft_cfg.lora_alpha > peft_cfg.r * 4:
             self.warnings.append(
                 f"LoRA alpha ({peft_cfg.lora_alpha}) is very high compared to rank ({peft_cfg.r}). "
@@ -143,7 +140,6 @@ class ConfigValidator:
             self.errors.append(f"Output config validation failed: {e}")
             return False
 
-        # Check if output directory is writable
         base_dir = Path(output_cfg.base_output_dir)
         try:
             base_dir.mkdir(parents=True, exist_ok=True)
@@ -188,7 +184,6 @@ class ConfigValidator:
         success &= self.validate_output_config(cfg.output)
         success &= self.validate_logging_config(cfg.logging)
 
-        # Cross-configuration checks
         if cfg.training.epochs == 1 and cfg.training.eval_steps > 100:
             self.warnings.append(
                 "Single epoch training with high eval_steps may not perform evaluation"

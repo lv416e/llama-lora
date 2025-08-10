@@ -37,11 +37,8 @@ from .utils.exceptions import (
     ConfigurationError,
 )
 
-# PydanticベースのHydra設定スキーマをConfigStoreに登録する
-
 warnings.filterwarnings("ignore", category=UserWarning, message=".*tokenizers.*")
 
-# Initialize logger
 logger = setup_logging()
 
 
@@ -54,10 +51,8 @@ def validate_and_log_config(cfg: DictConfig) -> None:
     Raises:
         ConfigurationError: If configuration validation fails.
     """
-    # Convert Hydra config to Pydantic for validation
     from config.schema import HydraConfig
 
-    # Create HydraConfig instance from DictConfig
     hydra_config = HydraConfig(
         model=cfg.model,
         dataset=cfg.dataset,
@@ -67,7 +62,6 @@ def validate_and_log_config(cfg: DictConfig) -> None:
         logging=cfg.logging,
     )
 
-    # Convert to Pydantic for validation
     hydra_config.to_pydantic_config()
 
     logger.info("Configuration Summary:")
@@ -198,7 +192,9 @@ def load_and_setup_model(cfg: DictConfig) -> Any:
                 trust_remote_code=True,
             )
         except ImportError:
-            logger.warning("FlashAttention2 not available, falling back to eager attention")
+            logger.warning(
+                "FlashAttention2 not available, falling back to eager attention"
+            )
             model = AutoModelForCausalLM.from_pretrained(
                 cfg.model.model_id,
                 device_map="auto",
@@ -207,7 +203,6 @@ def load_and_setup_model(cfg: DictConfig) -> Any:
                 trust_remote_code=True,
             )
 
-        # Configure for training
         model.config.use_cache = False
         if hasattr(model, "gradient_checkpointing_enable"):
             model.gradient_checkpointing_enable()
@@ -244,7 +239,6 @@ def setup_training_arguments(cfg: DictConfig, device: str) -> TrainingArguments:
     """
     use_fp16, use_bf16 = DeviceManager.setup_device_specific_settings(device)
 
-    # Ensure output directory exists
     PathManager.ensure_directory(cfg.output.base_output_dir)
 
     return TrainingArguments(
@@ -315,18 +309,12 @@ def main(cfg: DictConfig) -> None:
     - Saving of trained artifacts
     """
     try:
-        # Validate and log configuration
         validate_and_log_config(cfg)
-
-        # Setup device and seeds
         device = DeviceManager.detect_device()
         logger.info(f"Using device: {device}")
         SeedManager.setup_seed(cfg.training.seed)
 
-        # Load and setup tokenizer
         tokenizer = load_and_setup_tokenizer(cfg.model.model_id)
-
-        # Load and process dataset
         train_dataset, eval_dataset = load_and_process_dataset(cfg, tokenizer)
 
         # Setup data collator with dynamic padding for memory efficiency
@@ -337,13 +325,9 @@ def main(cfg: DictConfig) -> None:
             return_tensors="pt",
         )
 
-        # Load and setup model
         model = load_and_setup_model(cfg)
-
-        # Setup training arguments
         training_args = setup_training_arguments(cfg, device)
 
-        # Create trainer
         trainer = Trainer(
             model=model,
             args=training_args,
@@ -357,12 +341,10 @@ def main(cfg: DictConfig) -> None:
             ],
         )
 
-        # Train
         logger.info("Starting training...")
         trainer.train()
         logger.info("Training finished successfully")
 
-        # Save artifacts
         save_artifacts(cfg, model, tokenizer)
 
         logger.info("Training pipeline completed successfully!")

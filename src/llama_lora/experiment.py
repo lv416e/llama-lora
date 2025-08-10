@@ -25,7 +25,6 @@ def run_experiment(config_overrides: List[str], experiment_name: str) -> bool:
     print(f"Configuration: {' '.join(config_overrides)}")
     print(f"{'=' * 60}")
 
-    # Build command
     cmd = [
         sys.executable,
         "-m",

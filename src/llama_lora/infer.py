@@ -20,7 +20,6 @@ from .utils.exceptions import ModelLoadingError, AdapterError
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
-# Initialize logger
 logger = setup_logging()
 
 
@@ -187,40 +186,29 @@ def main(args: argparse.Namespace) -> None:
     try:
         logger.info("Starting inference process...")
 
-        # Load Hydra config programmatically
         with hydra.initialize(version_base=None, config_path="../../config"):
             cfg = hydra.compose(config_name="config")
 
-        # Detect device
         device = DeviceManager.detect_device()
         logger.info(f"Using device: {device}")
 
-        # Validate adapter directory
         validate_adapter_directory(cfg.output.adapter_dir)
-
-        # Load base model
         base_model = load_base_model(cfg.model.model_id)
 
-        # Load PEFT model
         model = load_peft_model(base_model, cfg.output.adapter_dir, device)
-
-        # Load tokenizer
         tokenizer = load_tokenizer_with_fallback(
             cfg.output.tokenizer_dir, cfg.model.model_id
         )
 
-        # Log inference parameters
         logger.info(
             f"Generation parameters: max_tokens={args.max_new_tokens}, "
             f"temperature={args.temperature}, top_p={args.top_p}"
         )
 
-        # Display prompt
         print("-" * 50)
         print(f"Prompt:\n{args.prompt}\n")
         logger.info(f"Processing prompt (length: {len(args.prompt)} chars)")
 
-        # Generate response
         response = generate_response(
             model=model,
             tokenizer=tokenizer,
@@ -231,7 +219,6 @@ def main(args: argparse.Namespace) -> None:
             top_p=args.top_p,
         )
 
-        # Display response
         print("Response:")
         print(response)
         print("-" * 50)

@@ -18,7 +18,6 @@ from .utils.exceptions import ModelLoadingError
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
-# Initialize logger
 logger = setup_logging()
 
 
@@ -76,14 +75,12 @@ def _run_inference_examples(
     separator = "-" * 50
     max_tokens = 64
 
-    # Simple prompt example
     simple_prompt = "日本語で簡潔に答えて。富士山の標高は？"
     print(f"Simple Prompt:\n{simple_prompt}\n")
     print("Response:")
     print(generate(model, tokenizer, simple_prompt, max_new_tokens=max_tokens))
     print(separator)
 
-    # Chat-style prompt example
     messages = [
         {
             "role": "system",
@@ -98,7 +95,6 @@ def _run_inference_examples(
     print(generate_chat(model, tokenizer, messages, max_new_tokens=max_tokens))
     print(separator)
 
-    # Alpaca-style prompt example
     alpaca_prompt = (
         "### Instruction:\n"
         "富士山の標高を日本語で簡潔に答えてください。\n"

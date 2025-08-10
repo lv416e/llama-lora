@@ -18,7 +18,6 @@ from .utils.exceptions import ModelLoadingError, AdapterError
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
-# Initialize logger
 logger = setup_logging()
 
 
@@ -109,7 +108,6 @@ def merge_and_save_model(peft_model: Any, merged_dir: str) -> Any:
         merged_model = peft_model.merge_and_unload()
         logger.info("Merge complete.")
 
-        # Ensure output directory exists
         PathManager.ensure_directory(merged_dir)
 
         logger.info(f"Saving merged model to '{merged_dir}'...")
@@ -168,7 +166,6 @@ def main(cfg: DictConfig) -> None:
         device = "cpu"
         logger.info(f"Using device: {device}")
 
-        # Extract configuration
         adapter_dir = cfg.output.adapter_dir
         model_id = cfg.model.model_id
         merged_dir = cfg.output.merged_dir
@@ -178,19 +175,12 @@ def main(cfg: DictConfig) -> None:
             f"Configuration: Model={model_id}, Adapter={adapter_dir}, Output={merged_dir}"
         )
 
-        # Validate adapter directory exists
         validate_adapter_directory(adapter_dir)
-
-        # Load base model
         base_model = load_base_model(model_id)
 
-        # Load PEFT adapter
         peft_model = load_peft_adapter(base_model, adapter_dir, device)
-
-        # Merge and save model
         merge_and_save_model(peft_model, merged_dir)
 
-        # Save tokenizer
         save_tokenizer(tokenizer_dir, model_id, merged_dir)
 
         logger.info(f"\nMerged model and tokenizer saved to: {merged_dir}")
