@@ -1,57 +1,85 @@
-# 技術スタック詳細
+# Technology Stack
 
-## 言語・ランタイム
-- **Python**: 3.12+ （.python-version で固定）
-- **依存関係管理**: uv（高速なPythonパッケージマネージャー）
+## Language & Runtime
+- **Python**: 3.12+ (enforced via .python-version)
+- **Package Manager**: uv (high-performance Python package manager)
 
-## 主要ライブラリ・バージョン
+## Core Dependencies (pyproject.toml)
 ```toml
 [project.dependencies]
-- accelerate>=1.10.0      # 分散学習・最適化
-- datasets>=4.0.0         # データセット管理
-- jupyter>=1.1.1          # ノートブック環境
-- peft>=0.17.0           # Parameter-Efficient Fine-Tuning（DoRA対応）
-- ruff>=0.12.8           # 高速リンター・フォーマッター
-- torch>=2.8.0           # PyTorch本体
-- transformers>=4.55.0   # Hugging Face Transformers
+accelerate>=1.10.0          # Distributed training & device optimization
+datasets>=4.0.0             # Dataset loading and processing
+hydra-core>=1.3.2          # Hierarchical configuration management
+jupyter>=1.1.1             # Interactive development environment
+peft>=0.17.0               # Parameter-Efficient Fine-Tuning (LoRA/DoRA)
+pydantic>=2.11.7           # Data validation and settings management
+pytest>=8.4.1             # Testing framework
+ruff>=0.12.8               # Fast linting and formatting
+tensorboard>=2.20.0        # Training visualization
+torch>=2.8.0               # Deep learning framework
+transformers>=4.55.0       # Pre-trained transformer models
+wandb>=0.21.1              # Experiment tracking (optional)
 ```
 
-## 機械学習フレームワーク構成
-### Core ML Stack
-- **PyTorch 2.8.0+**: テンソル計算・自動微分エンジン
-- **Transformers 4.55.0**: 事前訓練済みモデル・トークナイザー
-- **PEFT 0.17.0**: LoRA/DoRA実装（最新版でDoRA完全対応）
-- **Datasets 4.0.0**: データセット処理・変換
-- **Accelerate 1.10.0**: 分散学習・混合精度・デバイス管理
+## Machine Learning Stack
+### Core ML Framework
+- **PyTorch 2.8.0+**: Deep learning framework with automatic differentiation
+- **Transformers 4.55.0**: Hugging Face models and tokenizers
+- **PEFT 0.17.0**: Latest LoRA/DoRA implementations with advanced features
+- **Accelerate 1.10.0**: Device management, distributed training, mixed precision
 
-### 開発・品質管理
-- **Ruff 0.12.8**: 高速リンター・フォーマッター（black/flake8代替）
-- **Jupyter 1.1.1**: インタラクティブ開発・実験環境
+### Model & Data Pipeline
+- **Datasets 4.0.0**: Efficient dataset loading and preprocessing
+- **Flash Attention**: Automatic FlashAttention2 with eager attention fallback
+- **Mixed Precision**: Automatic fp16/bf16 selection based on device capabilities
 
-## PEFT設定詳細
+## Configuration & Validation
+- **Hydra Core 1.3.2**: Hierarchical configuration with overrides and composition
+- **Pydantic 2.11.7**: Runtime type checking and data validation
+- **OmegaConf**: Dynamic configuration merging and YAML support
+
+## Development & Quality Tools
+- **Ruff 0.12.8**: Fast linting and formatting (replaces black, flake8, isort)
+- **Pytest 8.4.1**: Testing framework with fixtures and parametrization
+- **Jupyter 1.1.1**: Interactive development and experimentation
+
+## Device & Performance Optimization
+### Supported Devices
+- **CUDA**: NVIDIA GPUs with automatic mixed precision (fp16/bf16)
+- **MPS**: Apple Silicon (M1/M2/M3) with Metal Performance Shaders
+- **CPU**: Fallback with automatic optimization
+
+### Memory Optimization Features
+- **Gradient Checkpointing**: Trades compute for memory
+- **Dynamic Padding**: Minimizes wasted computation
+- **Batch Size Adaptation**: Automatic device-specific optimization
+- **Tensor Core Optimization**: Padding to multiples of 8 for efficiency
+
+## PEFT Configuration Details
 ```python
-# LoRA/DoRA設定
-USE_DORA = True                    # DoRA有効化
-PEFT_R = 16                       # ランク（低ランク行列の次元）
-PEFT_LORA_ALPHA = 32              # スケーリングファクター
-PEFT_LORA_DROPOUT = 0.05          # ドロップアウト率
-
-# ターゲットモジュール（Llama専用設定）
-PEFT_TARGET_MODULES = [
-    "q_proj", "k_proj", "v_proj", "o_proj",    # アテンション層
-    "gate_proj", "up_proj", "down_proj",        # MLP層
+# LoRA/DoRA Target Modules (LLaMA-specific)
+target_modules = [
+    "q_proj", "k_proj", "v_proj", "o_proj",  # Attention layers
+    "gate_proj", "up_proj", "down_proj"      # MLP layers
 ]
+
+# Optimization Settings
+- Rank (r): 8-32 (configurable)
+- Alpha: 16-64 (configurable scaling)
+- Dropout: 0.1 (regularization)
+- DoRA: Optional weight decomposition
 ```
 
-## システム要件・対応環境
-- **プライマリ環境**: macOS (Darwin) - M2 Max MPS
-- **対応デバイス**: CUDA、MPS、CPU（自動検出）
-- **メモリ最適化**: gradient checkpointing、小バッチ設計
-- **Gated Model対応**: Hugging Face認証必須（meta-llama モデル）
+## Logging & Monitoring
+- **TensorBoard**: Default training visualization
+- **Wandb**: Optional experiment tracking
+- **Structured Logging**: Configurable levels with library suppression
 
-## パフォーマンス設定
-- **バッチサイズ**: 1（メモリ制約対応）
-- **勾配累積**: 8（実効バッチサイズ = 8）
-- **シーケンス長**: 1024トークン
-- **学習率**: 2e-5（保守的設定）
-- **混合精度**: デバイス依存（CUDA: fp16/bf16, MPS: fp32）
+## Entry Points & CLI
+```toml
+[project.scripts]
+llama-lora-train = "llama_lora.train:main"
+llama-lora-infer = "llama_lora.infer:main"
+llama-lora-merge = "llama_lora.merge:main"
+llama-lora-baseline = "llama_lora.baseline:main"
+```

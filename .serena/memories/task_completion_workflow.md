@@ -1,165 +1,237 @@
-# タスク完了時のワークフロー
+# Task Completion Workflow
 
-## 🎯 コード変更後の必須チェックリスト
+## 🎯 Code Quality Checklist (MANDATORY)
 
-### 1. コード品質チェック
+### 1. Code Formatting & Linting
 ```bash
-# Ruffによるリンティング・フォーマット（必須）
-uv run ruff check --fix .
-uv run ruff format .
+# ALWAYS run before any commit or task completion
+uv run ruff check --fix .     # Auto-fix linting issues
+uv run ruff format .          # Format code consistently
 
-# 型チェック（推奨、型ヒント有りの場合）
-# 現在は部分実装のため、将来的に導入
+# Verify clean state
+uv run ruff check .           # Should show "All checks passed!"
 ```
 
-### 2. 機能テスト
-#### 設定変更後
+### 2. Type Safety & Validation
 ```bash
-# 設定値の妥当性確認
-python -c "import scripts.config as config; print(f'MODEL: {config.MODEL_ID}'); print(f'DORA: {config.USE_DORA}'); print(f'LR: {config.LR}')"
-```
+# Validate configuration schemas
+uv run python -m llama_lora.validate
 
-#### 訓練スクリプト変更後
-```bash
-# 短時間テスト実行（設定でEPOCHS=1、DATASET_SPLIT小さく）
-python scripts/train.py
-
-# 正常終了確認 → アダプター生成確認
-ls -la ./out-llama-lora/adapter/
-```
-
-#### 推論スクリプト変更後
-```bash
-# 既存アダプターでの推論テスト
-python scripts/infer.py "テスト用プロンプト"
-
-# エラーハンドリング確認
-python scripts/infer.py "test" --max_new_tokens 10
-```
-
-### 3. システム互換性確認
-```bash
-# M2 Max MPS対応確認
-python -c "import torch; print(f'MPS Available: {torch.backends.mps.is_available()}')"
-
-# デバイス自動検出テスト
-python -c "
-device = 'cpu'
-if torch.cuda.is_available():
-    device = 'cuda'
-elif torch.backends.mps.is_available():
-    device = 'mps'
-print(f'Detected device: {device}')
+# Test configuration parsing
+uv run python -c "
+from config.schema import HydraConfig
+config = HydraConfig()
+print('✅ Configuration validation passed')
 "
 ```
 
-## 📝 変更履歴の記録
+## 🧪 Testing Requirements
 
-### Git管理（推奨）
+### After Code Changes
 ```bash
-# 変更内容の確認
-git status
-git diff
+# Run relevant tests based on changes
+pytest tests/test_tokenizer_utils.py      # If utils/common.py changed
+pytest tests/test_config_validation.py    # If config/schema.py changed
+pytest tests/test_path_manager.py         # If file operations changed
 
-# 意味のあるコミット
-git add .
-git commit -m "feat: DoRAランタイム最適化を追加
-
-- LoraRuntimeConfigでephemeral_gpu_offloadを有効化
-- MPSでのメモリ最適化処理を改善
-- エラーハンドリングを強化"
-
-# プッシュ前の最終確認
-git log --oneline -5
+# Full test suite for major changes
+pytest tests/ -v
 ```
 
-### 設定変更の記録
+### After Configuration Changes
 ```bash
-# config.py変更時は影響範囲を確認
-grep -r "config\." scripts/
+# Test all experiment configurations
+uv run python -m llama_lora.validate +experiment=quick_test
+uv run python -m llama_lora.validate +experiment=full_training
 
-# 重要な設定変更は設定ファイルにコメント追加
-# 例: LR = 2e-5  # 以前2e-4から変更、安定性向上のため
+# Quick smoke test
+uv run python -m llama_lora.train +experiment=quick_test training.epochs=1
 ```
 
-## 🧪 本格運用前の統合テスト
+## 🚀 Functional Verification
 
-### 完全ワークフローテスト
+### After Training Pipeline Changes
 ```bash
-# フルパイプラインテスト
-echo "=== ベースライン評価 ==="
-python scripts/baseline_inference.py
+# End-to-end smoke test (REQUIRED)
+echo "=== 1. Baseline Check ==="
+uv run python -m llama_lora.baseline
 
-echo "=== 訓練実行 ==="
-python scripts/train.py
+echo "=== 2. Training Test ==="
+uv run python -m llama_lora.train +experiment=quick_test
 
-echo "=== ファインチューニング後推論 ==="
-python scripts/infer.py "富士山の標高は？"
+echo "=== 3. Inference Test ==="
+uv run python -m llama_lora.infer "Test prompt for validation"
 
-echo "=== アダプター統合 ==="
-python scripts/merge.py
+echo "=== 4. Merge Test ==="
+uv run python -m llama_lora.merge
 
-echo "=== 統合モデル確認 ==="
-ls -la ./out-llama-lora/merged/
-
-echo "=== テスト完了 ==="
+echo "=== 5. Output Verification ==="
+ls -la outputs/adapter/     # Should contain adapter files
+ls -la outputs/merged/      # Should contain merged model
 ```
 
-### パフォーマンス確認
+### After Inference Changes
 ```bash
-# メモリ使用量監視下での実行
-/usr/bin/time -l python scripts/train.py
-
-# 処理時間測定
-time python scripts/infer.py "テストプロンプト"
+# Test inference with different parameters
+uv run python -m llama_lora.infer "Simple test" --max_new_tokens 32
+uv run python -m llama_lora.infer "Complex reasoning task" --temperature 0.1
 ```
 
-## 🚨 問題発生時の対処
-
-### 即座に実行すべき確認事項
+### After Configuration System Changes
 ```bash
-# 1. 依存関係の問題
-uv sync
-
-# 2. 環境変数の確認
-echo $PYTORCH_ENABLE_MPS_FALLBACK
-
-# 3. 出力ディレクトリの権限
-ls -la ./out-llama-lora/
-
-# 4. ディスク容量確認
-df -h .
-
-# 5. プロセス確認
-ps aux | grep python
+# Test override mechanisms
+uv run python -m llama_lora.train training.lr=1e-5 --dry-run
+uv run python -m llama_lora.train model.use_dora=true --dry-run
 ```
 
-### ロールバック手順
-```bash
-# Git履歴から復元
-git log --oneline
-git checkout HEAD~1 scripts/train.py
+## 📁 File System Verification
 
-# 設定リセット
-git checkout HEAD scripts/config.py
+### Output Directory Structure
+```bash
+# Verify expected output structure after training
+tree outputs/ -I "__pycache__"
+
+# Expected structure:
+# outputs/
+# ├── adapter/
+# │   ├── adapter_config.json
+# │   └── adapter_model.safetensors
+# ├── tokenizer/
+# │   ├── tokenizer_config.json
+# │   └── tokenizer.json
+# ├── runs/                    # TensorBoard logs
+# └── merged/                  # After merge operation
 ```
 
-## ✅ 完了確認項目
+### Cleanup Verification
+```bash
+# Ensure no temporary files left behind
+find . -name "*.tmp" -o -name "*.log" -o -name "core.*" | head -10
+find . -type d -name "__pycache__" | head -5
+```
 
-### 必須チェックリスト
-- [ ] Ruffによるコード品質チェック通過
-- [ ] 最低1回の機能動作確認
-- [ ] エラーメッセージの適切性確認
-- [ ] M2 Max MPS環境での動作確認
+## 🔍 System Integration Checks
 
-### 推奨チェックリスト
-- [ ] Git履歴への適切なコミット
-- [ ] 設定変更のドキュメント更新
-- [ ] パフォーマンス影響の確認
-- [ ] 既存機能への影響評価
+### Device Compatibility
+```bash
+# Verify device detection works correctly
+uv run python -c "
+from src.llama_lora.utils.common import DeviceManager
+device = DeviceManager.detect_device()
+print(f'✅ Detected device: {device}')
 
-### 品質基準
-- コードは既存スタイルに準拠
-- エラーハンドリングが適切
-- メモリ効率が維持されている
-- M2 Max MPS対応が損なわれていない
+fp16, bf16 = DeviceManager.setup_device_specific_settings(device)
+print(f'✅ Device settings: fp16={fp16}, bf16={bf16}')
+"
+```
+
+### Memory Management
+```bash
+# Check for memory leaks during training
+# (Only run if memory issues suspected)
+uv run python -c "
+import torch
+import gc
+print(f'Initial memory: {torch.cuda.memory_allocated() if torch.cuda.is_available() else 0}')
+# Run small training step here
+gc.collect()
+torch.cuda.empty_cache() if torch.cuda.is_available() else None
+print(f'Final memory: {torch.cuda.memory_allocated() if torch.cuda.is_available() else 0}')
+"
+```
+
+## 📝 Documentation Updates
+
+### When Code Structure Changes
+- Update README.md if new commands or workflows added
+- Update configuration examples if new parameters added
+- Update memory files if architecture significantly changed
+
+### When Adding New Features
+```bash
+# Ensure new modules have proper docstrings
+grep -r "\"\"\"" src/llama_lora/ --include="*.py" | wc -l
+
+# Check for missing type hints
+uv run python -c "
+import ast
+import sys
+from pathlib import Path
+
+def check_type_hints(file_path):
+    with open(file_path) as f:
+        tree = ast.parse(f.read())
+    
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef):
+            if not node.returns and node.name != '__init__':
+                print(f'Missing return type: {file_path}:{node.lineno} {node.name}')
+
+for py_file in Path('src/llama_lora').rglob('*.py'):
+    check_type_hints(py_file)
+"
+```
+
+## ⚠️ Pre-Commit Checklist
+
+### MANDATORY Steps (Never Skip)
+1. ✅ Run `uv run ruff check --fix .`
+2. ✅ Run `uv run ruff format .`
+3. ✅ Verify `uv run ruff check .` passes
+4. ✅ Run basic functional test (smoke test)
+5. ✅ Check no unintended files in git staging
+
+### For Significant Changes
+1. ✅ Run full test suite: `pytest tests/`
+2. ✅ Run end-to-end workflow test
+3. ✅ Validate all experiment configurations
+4. ✅ Update relevant documentation
+
+## 🚨 Failure Response Procedures
+
+### If Tests Fail
+```bash
+# Don't commit until all tests pass
+pytest tests/ -v --tb=short     # Get detailed failure info
+pytest tests/failing_test.py -s # Debug specific test
+
+# Fix issues and re-run
+pytest tests/test_that_failed.py -v
+```
+
+### If Linting Fails
+```bash
+# Check what ruff wants to change
+uv run ruff check . --diff
+
+# Apply fixes
+uv run ruff check --fix .
+uv run ruff format .
+
+# Manually review and fix remaining issues
+uv run ruff check .
+```
+
+### If Functional Tests Fail
+```bash
+# Check logs for error details
+tail -50 /tmp/llama_lora_debug.log
+
+# Test components individually
+uv run python -m llama_lora.validate
+uv run python -c "from src.llama_lora.utils.common import setup_logging; setup_logging()"
+```
+
+## 📊 Success Criteria
+
+### All Tasks Must Meet
+- ✅ Ruff checks pass completely
+- ✅ No Python import errors
+- ✅ Configuration validation passes
+- ✅ Basic smoke test completes successfully
+
+### Significant Changes Must Also Meet
+- ✅ Full test suite passes
+- ✅ End-to-end workflow completes
+- ✅ Memory usage remains stable
+- ✅ Device compatibility maintained

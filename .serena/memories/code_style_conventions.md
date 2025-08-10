@@ -1,110 +1,173 @@
-# コーディング規約・スタイルガイド
+# Code Style & Conventions
 
-## 全般的なコード品質
-- **モジュラー設計**: 機能別スクリプト分離（config.py で設定一元管理）
-- **型ヒント**: 部分的に実装（引数の型指定あり）
-- **docstring**: 重要関数には簡潔なdocstring（"""形式）
-- **エラーハンドリング**: ファイル存在チェック、適切なエラーメッセージ
+## Code Quality Philosophy
+- **Minimal Comments**: Only WHY comments, not WHAT comments
+- **Type Safety**: Full type hints with Pydantic validation
+- **Error Handling**: Comprehensive exception handling with custom exceptions
+- **Modular Design**: Clear separation of concerns with utility classes
 
-## インポート規約
+## Import Organization
 ```python
-# 標準ライブラリ
-import os
+# Standard library imports
 import warnings
+from typing import Any, Dict
 
-# サードパーティライブラリ
+# Third-party imports (grouped by functionality)
+import hydra
 import torch
 from datasets import load_dataset
+from omegaconf import DictConfig, OmegaConf
 from peft import LoraConfig, TaskType, get_peft_model
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
-    DataCollatorForLanguageModeling,
-    Trainer,
     TrainingArguments,
 )
 
-# プロジェクト内モジュール
-import config
+# Local imports
+from .utils.common import DeviceManager, setup_logging
+from .utils.exceptions import ModelLoadingError
 ```
 
-## 命名規則
-### 定数（config.py）
+## Naming Conventions
+### Variables & Functions
+- **snake_case**: All variables, functions, and module names
+- **Descriptive names**: `device_manager.detect_device()` not `dm.detect()`
+- **Clear intent**: `load_and_setup_tokenizer()` not `load_tokenizer()`
+
+### Classes
+- **PascalCase**: `DeviceManager`, `TokenizerUtils`, `PathManager`
+- **Utility classes**: Static methods for related functionality
+- **Manager pattern**: For complex stateful operations
+
+### Constants & Configuration
+- **SCREAMING_SNAKE_CASE**: For true constants (rare in this codebase)
+- **Pydantic fields**: lowercase with Field() descriptors
+- **Hydra configs**: lowercase nested structure
+
+## Type Hints & Validation
+### Function Signatures
 ```python
-# 全て大文字、アンダースコア区切り
-MODEL_ID = "meta-llama/Llama-3.2-1B-Instruct"
-PEFT_TARGET_MODULES = ["q_proj", "k_proj", ...]
-BASE_OUTPUT_DIR = "./out-llama-lora"
+def load_and_process_dataset(
+    cfg: DictConfig, tokenizer: AutoTokenizer
+) -> tuple[Any, Any]:
+    """Clear docstring explaining purpose."""
 ```
 
-### 変数・関数
+### Pydantic Models
 ```python
-# snake_case形式
-device = "cpu"
-tok_ds = dataset.map(format_dataset, ...)
-training_args = TrainingArguments(...)
-
-# 関数名も snake_case
-def format_dataset(e):
-    return tok(s, truncation=True, ...)
-
-def main():
-    # メイン処理
+class TrainingConfig(BaseModel):
+    lr: float = Field(default=2e-5, gt=0.0, description="Learning rate")
+    batch_size: int = Field(default=4, ge=1, description="Training batch size")
 ```
 
-## コード構造パターン
-### メイン関数の構造
+## Documentation Style
+### Docstrings
+- **Google Style**: Args, Returns, Raises sections
+- **Purpose-focused**: Explain WHY and WHEN to use
+- **Error conditions**: Always document exceptions
+
 ```python
-def main():
-    # --- Device Setup ---
-    device = "cpu"
-    if torch.cuda.is_available():
-        device = "cuda"
-    elif torch.backends.mps.is_available():
-        device = "mps"
+def setup_device_specific_settings(device: str) -> tuple[bool, bool]:
+    """Configure device-specific training settings.
     
-    # --- セクション別処理 ---
-    # 明確なコメントでセクション分割
+    Args:
+        device: Target device string.
+        
+    Returns:
+        Tuple of (use_fp16, use_bf16) boolean flags.
+    """
 ```
 
-### 設定パターン
+### Meaningful Comments (Non-trivial only)
 ```python
-# デバイス依存設定の条件分岐
-use_fp16 = device == "cuda"  # MPS対応
+# Latest best practices: auto device mapping, dtype, and Flash Attention
+# Try flash_attention_2 first, fall back to eager if not available
 
-# 設定ファイルからの値参照
-r=config.PEFT_R,
-lora_alpha=config.PEFT_LORA_ALPHA,
+# Use CPU for merging (less memory intensive)
+device = "cpu"
+
+# Optimize for tensor cores
+pad_to_multiple_of=8
 ```
 
-## docstring形式
+## Error Handling Patterns
+### Custom Exceptions
 ```python
-def generate(model, tokenizer, prompt, max_new_tokens=128, ...):
-    \"\"\"
-    Generates text from a prompt using the given model and tokenizer.
-    \"\"\"
-    # 実装
+# Specific exception types for different failure modes
+class ModelLoadingError(LlamaLoRAError): pass
+class DatasetError(LlamaLoRAError): pass
+class TrainingError(LlamaLoRAError): pass
+class ConfigurationError(LlamaLoRAError): pass
 ```
 
-## エラーハンドリング
+### Exception Chaining
 ```python
-# ファイル存在チェック
-if not os.path.isdir(config.ADAPTER_DIR):
-    print(f"Error: Adapter directory not found at '{config.ADAPTER_DIR}'")
-    print("Please run train.py to create an adapter first.")
-    return
-
-# 条件チェック
-if tok.pad_token is None:
-    tok.pad_token = tok.eos_token
+try:
+    model = AutoModelForCausalLM.from_pretrained(model_id)
+except Exception as e:
+    raise ModelLoadingError(
+        f"Failed to load model '{model_id}': {str(e)}"
+    ) from e
 ```
 
-## コメント規約
-- **セクション区切り**: `# --- Section Name ---`
-- **インライン説明**: 重要な設定・判定に簡潔なコメント
-- **設定説明**: `# Enable for CUDA`等、設定理由を明記
+## Configuration Management
+### Hydra Integration
+- **Hierarchical configs**: Base + experiment overrides
+- **Type validation**: Pydantic models for runtime checking
+- **CLI overrides**: `training.lr=1e-5 model.use_dora=true`
 
-## 品質管理ツール
-- **Ruff**: 自動リンティング・フォーマット
-- **警告制御**: `warnings.filterwarnings("ignore", ...)`で適切に制御
-- **printベースログ**: 進捗・状態表示（将来的にlogging推奨）
+### Default Values
+```python
+# Sensible defaults for quick testing
+batch_size: int = 1           # Memory-safe default
+epochs: int = 1               # Quick iteration
+dataset_split: "train[:1%]"   # Fast dataset loading
+```
+
+## Utility Class Patterns
+### Static Utility Classes
+```python
+class DeviceManager:
+    """Centralized device detection and management."""
+    
+    @staticmethod
+    def detect_device() -> str:
+        """Detect optimal device with fallback chain."""
+        
+class TokenizerUtils:
+    """Utility functions for tokenizer management."""
+```
+
+### Manager Classes for Complex Operations
+- **PathManager**: Directory operations with error handling
+- **SeedManager**: Reproducibility across frameworks
+- **DeviceManager**: Device detection and optimization
+
+## Logging Standards
+### Structured Logging
+```python
+logger = setup_logging()  # Configured once per module
+
+# Informational progress
+logger.info(f"Loading tokenizer from '{path}'...")
+
+# Warnings for fallbacks
+logger.warning("FlashAttention2 not available, falling back to eager attention")
+
+# Errors with context
+logger.error(f"Training failed: {str(e)}", exc_info=True)
+```
+
+### Library Log Suppression
+```python
+# Suppress verbose logs from transformers and other libraries
+logging.getLogger("transformers").setLevel(logging.WARNING)
+logging.getLogger("datasets").setLevel(logging.WARNING)
+```
+
+## Code Formatting
+- **Ruff**: Automatic formatting and linting
+- **Line length**: 88 characters (ruff default)
+- **String quotes**: Double quotes preferred
+- **Trailing commas**: For multi-line structures

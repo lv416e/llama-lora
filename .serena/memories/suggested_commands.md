@@ -1,162 +1,271 @@
-# 重要コマンド一覧
+# Essential Commands for LLaMA-LoRA Development
 
-## 🚀 基本開発ワークフロー
+## 🚀 Core Development Workflow
 
-### 1. 環境セットアップ
+### Environment Setup
 ```bash
-# プロジェクトディレクトリに移動
+# Navigate to project directory
 cd /path/to/llama-lora
 
-# 依存関係のインストール
+# Install dependencies with uv
 uv sync
 
-# Hugging Face認証（初回のみ）
+# Authenticate with Hugging Face (required for gated models)
 huggingface-cli login
 ```
 
-### 2. 訓練・推論・マージワークフロー
+### Complete Training Pipeline
 ```bash
-# ① ベースライン評価（オプション）
-python scripts/baseline_inference.py
+# 1. (Optional) Baseline evaluation
+uv run python -m llama_lora.baseline
 
-# ② DoRA/LoRAファインチューニング実行
-python scripts/train.py
+# 2. Train LoRA/DoRA adapter
+uv run python -m llama_lora.train
 
-# ③ ファインチューニング済みモデルでの推論テスト
-python scripts/infer.py "富士山の標高は？"
+# 3. Test fine-tuned model with inference
+uv run python -m llama_lora.infer "Your test prompt here"
 
-# ④ アダプターをベースモデルに統合（スタンドアロン化）
-python scripts/merge.py
+# 4. (Optional) Merge adapter into standalone model
+uv run python -m llama_lora.merge
 ```
 
-## 🔧 開発・デバッグコマンド
+## ⚙️ Configuration & Validation
 
-### パッケージ管理（uv）
+### Hydra Configuration System
 ```bash
-# 依存関係の同期
-uv sync
+# Validate configuration before training
+uv run python -m llama_lora.validate
 
-# 新しい依存関係の追加
-uv add package_name
+# Train with configuration overrides
+uv run python -m llama_lora.train training.lr=1e-5 model.use_dora=true
 
-# 依存関係の更新
-uv lock --upgrade
+# Use experiment presets
+uv run python -m llama_lora.train +experiment=quick_test
+uv run python -m llama_lora.train +experiment=full_training
 
-# 仮想環境の確認
-uv venv --python 3.12
+# Override multiple parameters
+uv run python -m llama_lora.train training.lr=2e-5 training.epochs=3 peft.r=16
 ```
 
-### コード品質管理
+### Advanced Inference Options
 ```bash
-# Ruffによるリンティング
+# Basic inference
+uv run python -m llama_lora.infer "富士山の標高は？"
+
+# Custom generation parameters
+uv run python -m llama_lora.infer "Explain machine learning" \
+  --max_new_tokens 256 \
+  --temperature 0.8 \
+  --top_p 0.9
+```
+
+## 🧪 Testing & Quality Assurance
+
+### Code Quality (Ruff)
+```bash
+# Check code quality
 uv run ruff check .
 
-# Ruffによる自動修正
+# Auto-fix issues
 uv run ruff check --fix .
 
-# Ruffによるフォーマット
+# Format code
 uv run ruff format .
+
+# Combined quality check
+uv run ruff check --fix . && uv run ruff format .
 ```
 
-## 🍎 macOS (Darwin) 固有コマンド
-
-### MPS環境設定
+### Testing Suite
 ```bash
-# MPS環境変数設定（必要に応じて）
-export PYTORCH_ENABLE_MPS_FALLBACK=1
-export ACCELERATE_USE_MPS=true
+# Run all tests
+pytest tests/
 
-# システムリソース監視
-top -o MEM    # メモリ使用量監視
-activity_monitor  # GUI版リソースモニター
+# Run specific test file
+pytest tests/test_tokenizer_utils.py -v
+
+# Run tests with coverage
+pytest tests/ --cov=src/llama_lora
+
+# Run single test function
+pytest tests/test_config_validation.py::test_model_config_validation -v
 ```
 
-### ファイル・ディレクトリ操作
+## 📊 Monitoring & Debugging
+
+### TensorBoard Monitoring
 ```bash
-# ファインダーで開く
+# Start TensorBoard (training logs)
+uv run tensorboard --logdir outputs/runs
+
+# View at http://localhost:6006
+```
+
+### Experiment Management
+```bash
+# Run multiple experiments
+uv run python -m llama_lora.experiment
+
+# Check output structure
+tree outputs/
+ls -la outputs/adapter/
+ls -la outputs/merged/
+```
+
+## 🔧 Development & Debugging
+
+### Package Management (uv)
+```bash
+# Update dependencies
+uv sync
+
+# Add new dependency
+uv add package_name
+
+# Remove dependency
+uv remove package_name
+
+# Update lock file
+uv lock --upgrade
+```
+
+### Device & Environment Checks
+```bash
+# Check device availability
+uv run python -c "
+import torch
+print(f'CUDA available: {torch.cuda.is_available()}')
+print(f'MPS available: {torch.backends.mps.is_available()}')
+print(f'Device count: {torch.cuda.device_count() if torch.cuda.is_available() else 0}')
+"
+
+# Check memory usage (CUDA)
+uv run python -c "
+import torch
+if torch.cuda.is_available():
+    print(f'GPU Memory: {torch.cuda.memory_allocated()/1e9:.2f}GB / {torch.cuda.memory_reserved()/1e9:.2f}GB')
+"
+```
+
+## 🍎 macOS-Specific Commands
+
+### System Resource Monitoring
+```bash
+# Monitor system resources
+top -o MEM
+htop  # if installed
+
+# Check disk space
+df -h .
+du -sh outputs/
+
+# Open in Finder
 open .
-open ./out-llama-lora
+open outputs/
+```
 
-# ファイル検索
+### File Operations
+```bash
+# Search for files
 find . -name "*.py" -type f
-find . -name "*lora*" -type d
+find outputs/ -name "*adapter*" -type f
 
-# テキスト検索
-grep -r "USE_DORA" scripts/
-grep -r "MODEL_ID" . --include="*.py"
+# Search in files
+grep -r "DoRA" src/ --include="*.py"
+grep -r "model_id" config/ --include="*.yaml"
+
+# Count lines of code
+find src/ -name "*.py" -exec wc -l {} + | tail -1
 ```
 
-## 📊 推論コマンド詳細
+## 🚨 Troubleshooting Commands
 
-### 基本推論
+### Memory Issues
 ```bash
-# 日本語プロンプト
-python scripts/infer.py "日本語で簡潔に答えて。富士山の標高は？"
+# Clear Python cache
+find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 
-# 英語プロンプト
-python scripts/infer.py "What is the height of Mount Fuji?"
+# Clear GPU memory (if CUDA)
+uv run python -c "
+import torch
+if torch.cuda.is_available():
+    torch.cuda.empty_cache()
+    print('GPU cache cleared')
+"
 
-# パラメータ付き推論
-python scripts/infer.py "Your prompt here" --max_new_tokens 64 --temperature 0.7 --top_p 0.9
+# Check available memory
+free -h  # Linux
+vm_stat  # macOS
 ```
 
-### ベースライン比較
+### Configuration Debugging
 ```bash
-# ベースモデルの性能確認
-python scripts/baseline_inference.py
+# Debug Hydra configuration
+uv run python -m llama_lora.validate --cfg job
 
-# ファインチューニング後の比較
-python scripts/infer.py "同じプロンプト"
+# Print effective configuration
+uv run python -c "
+import hydra
+from omegaconf import OmegaConf
+with hydra.initialize(config_path='config'):
+    cfg = hydra.compose(config_name='config')
+    print(OmegaConf.to_yaml(cfg))
+"
 ```
 
-## 🔍 デバッグ・開発支援
-
-### ログ・出力確認
+### Process Management
 ```bash
-# 訓練ログの確認
-python scripts/train.py 2>&1 | tee training.log
+# Kill stuck training processes
+pkill -f "python.*llama_lora.train"
+ps aux | grep python | grep llama_lora
 
-# GPU使用量監視（CUDA環境）
-nvidia-smi
-
-# プロセス監視
-ps aux | grep python
+# Monitor GPU usage (NVIDIA)
+watch -n 1 nvidia-smi
 ```
 
-### Jupyter開発
-```bash
-# Jupyterの起動
-uv run jupyter lab
+## 📈 Quick Smoke Tests
 
-# ノートブック実行
-jupyter nbconvert --execute examples/tiny-llama-dora-test.ipynb
+### Fast End-to-End Test
+```bash
+# Complete pipeline with minimal resources
+uv run python -m llama_lora.train +experiment=quick_test && \
+uv run python -m llama_lora.infer "Test prompt" && \
+uv run python -m llama_lora.merge
+
+echo "✅ End-to-end pipeline completed successfully"
 ```
 
-## ⚡ 緊急時・トラブルシューティング
-
-### メモリ不足対応
+### Configuration Validation Test
 ```bash
-# キャッシュクリア
-python -c "import torch; torch.mps.empty_cache()"
-
-# プロセス強制終了
-pkill -f "python.*train.py"
+# Test all experiment configurations
+for config in config/experiment/*.yaml; do
+    echo "Testing $(basename $config)"
+    uv run python -m llama_lora.validate +experiment=$(basename $config .yaml)
+done
 ```
 
-### 設定リセット
-```bash
-# 出力ディレクトリクリア
-rm -rf ./out-llama-lora
+## 🎯 Most Frequently Used Commands
 
-# uvキャッシュクリア
-uv cache clean
+### Daily Development
+```bash
+# Quality check before commit
+uv run ruff check --fix . && uv run ruff format .
+
+# Quick training iteration
+uv run python -m llama_lora.train +experiment=quick_test
+
+# Test inference
+uv run python -m llama_lora.infer "Your prompt here"
 ```
 
-## 🎯 頻用コマンド組み合わせ
+### Before Production
 ```bash
-# 完全なワークフロー実行
-python scripts/train.py && python scripts/infer.py "テストプロンプト" && python scripts/merge.py
+# Full validation
+uv run python -m llama_lora.validate
 
-# 品質チェック後の実行
-uv run ruff check --fix . && python scripts/train.py
+# Full test suite
+pytest tests/ --cov=src/llama_lora
+
+# Production training
+uv run python -m llama_lora.train +experiment=full_training
 ```

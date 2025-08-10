@@ -1,38 +1,53 @@
-# llama-lora プロジェクト概要
+# LLaMA-LoRA Project Overview
 
-## プロジェクトの目的
-llama-loraは、Hugging Face Transformers とPEFTライブラリを使用して、Llamaモデル（特にLlama-3.2-1B-Instruct）をLoRA（Low-Rank Adaptation）およびDoRA（Weight-Decomposed Low-Rank Adaptation）で効率的にファインチューニングするためのプロジェクトです。
+## Project Purpose
+A modern, production-ready framework for fine-tuning LLaMA models using Parameter-Efficient Fine-Tuning (PEFT) with LoRA (Low-Rank Adaptation) and DoRA (Weight-Decomposed Low-Rank Adaptation). The project emphasizes memory efficiency, automatic device optimization, and enterprise-grade error handling.
 
-## 主な特徴
-- **最新技術の採用**: DoRA対応（PEFT 0.17.0+）
-- **M2 Max MPS完全対応**: Apple Silicon上での最適化
-- **完全なワークフロー**: 訓練 → 推論 → マージ → 評価の全工程をカバー
-- **メモリ効率**: gradient checkpointing、小バッチ + 勾配累積によるメモリ最適化
-- **モジュラー設計**: 機能別にスクリプトが分離された保守しやすい構造
+## Key Features
+- **Advanced PEFT Support**: LoRA and DoRA fine-tuning with PEFT 0.17.0+
+- **Multi-Device Optimization**: Automatic CUDA/MPS/CPU detection and optimization
+- **Memory Efficiency**: Gradient checkpointing, dynamic padding, optimal batch sizing
+- **Modern Configuration**: Hydra + Pydantic for type-safe, hierarchical configuration
+- **Flash Attention**: Automatic FlashAttention2 with graceful fallback
+- **Production Ready**: Comprehensive error handling, logging, and validation
 
-## 使用モデル・データセット
-- **ベースモデル**: meta-llama/Llama-3.2-1B-Instruct（ゲート付きモデル）
-- **データセット**: tatsu-lab/alpaca（1%サブセット、高速テスト用）
-- **出力ディレクトリ**: ./out-llama-lora/ （アダプター、統合モデル、トークナイザー）
+## Target Model & Dataset
+- **Primary Model**: meta-llama/Llama-3.2-1B-Instruct (gated model requiring HF authentication)
+- **Dataset**: tatsu-lab/alpaca with configurable splits (default: 1% for quick testing)
+- **Output Directory**: `./outputs/` (adapter, tokenizer, merged models, logs)
 
-## プロジェクト構造
+## Project Structure
 ```
 llama-lora/
-├── pyproject.toml              # 依存関係・プロジェクト設定
-├── README.md                   # 使用方法・セットアップ手順
-├── uv.lock                     # 依存関係ロックファイル
-├── scripts/                    # メインスクリプトディレクトリ
-│   ├── config.py              # 設定一元管理
-│   ├── train.py               # DoRA/LoRA訓練
-│   ├── infer.py               # 推論・テスト
-│   ├── merge.py               # アダプター統合
-│   └── baseline_inference.py  # ベースモデル評価
-└── examples/
-    └── tiny-llama-dora-test.ipynb # 実験・検証用ノートブック
+├── src/llama_lora/              # Main package
+│   ├── train.py                 # Training pipeline with PEFT
+│   ├── infer.py                 # Inference with adapter
+│   ├── merge.py                 # Adapter merging to standalone model
+│   ├── baseline.py              # Base model evaluation
+│   ├── validate.py              # Configuration validation
+│   ├── experiment.py            # Multi-experiment runner
+│   └── utils/                   # Common utilities
+│       ├── common.py            # Device, tokenizer, path management
+│       └── exceptions.py        # Custom exception classes
+├── config/                      # Hydra configuration
+│   ├── config.yaml             # Base configuration
+│   ├── schema.py               # Pydantic validation schemas
+│   └── experiment/             # Experiment presets
+├── tests/                       # Test suite
+├── examples/                    # Jupyter notebooks
+└── pyproject.toml              # Dependencies and entry points
 ```
 
-## 技術的ハイライト
-- DoRAによる高精度ファインチューニング
-- Llamaアーキテクチャ全プロジェクション層への適用
-- M2 Max MPSでの混合精度最適化（fp16/bf16自動無効化）
-- エラーハンドリングと存在チェック機能
+## Core Workflows
+1. **Training**: `uv run python -m llama_lora.train` → Creates LoRA/DoRA adapter
+2. **Inference**: `uv run python -m llama_lora.infer "prompt"` → Uses base + adapter
+3. **Merging**: `uv run python -m llama_lora.merge` → Creates standalone model
+4. **Validation**: `uv run python -m llama_lora.validate` → Validates configuration
+
+## Technical Highlights
+- **Modern Python**: 3.12+ with uv package management
+- **Type Safety**: Full Pydantic validation with Hydra integration
+- **Memory Optimization**: Gradient checkpointing, mixed precision (device-dependent)
+- **Device Flexibility**: Automatic CUDA/MPS/CPU detection and optimization
+- **Professional Logging**: Structured logging with configurable backends (TensorBoard, Wandb)
+- **Error Resilience**: Comprehensive exception handling with meaningful error messages
