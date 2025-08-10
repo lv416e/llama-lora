@@ -135,7 +135,6 @@ class ConfigValidator:
             bool: True if validation passes.
         """
         try:
-            # Create OutputConfig instance to trigger automatic path generation
             pydantic_config = OutputConfig(**output_cfg)
         except ValidationError as e:
             self.errors.append(f"Output config validation failed: {e}")
@@ -153,7 +152,6 @@ class ConfigValidator:
         if not output_cfg.get("experiment_name"):
             self.warnings.append("No experiment name specified, using 'default'")
 
-        # Check for conflicting manual path specifications
         manual_paths = [
             "adapter_dir",
             "tokenizer_dir",

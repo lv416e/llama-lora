@@ -3,6 +3,9 @@
 import logging
 import os
 import random
+import uuid
+from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict
 
 import torch
@@ -62,7 +65,6 @@ class SeedManager:
         except ImportError:
             pass
 
-        # Set deterministic algorithms for CUDA
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
             torch.backends.cudnn.deterministic = True
@@ -160,3 +162,41 @@ def get_optimal_num_processes() -> int:
         Number of processes to use.
     """
     return max(1, (os.cpu_count() or 2) // 2)
+
+
+def generate_unique_run_id(max_retries: int = 3) -> str:
+    """Generate collision-resistant run ID with timestamp and UUID.
+
+    Args:
+        max_retries: Maximum number of retry attempts if collision detected.
+
+    Returns:
+        Unique run ID string combining timestamp and short UUID.
+
+    Raises:
+        RuntimeError: If unable to generate unique ID after max_retries.
+    """
+    for _ in range(max_retries):
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        short_uuid = str(uuid.uuid4())[:8]
+        run_id = f"{timestamp}_{short_uuid}"
+        return run_id
+
+    raise RuntimeError(f"Failed to generate unique run_id after {max_retries} attempts")
+
+
+def validate_run_id_uniqueness(
+    run_id: str, base_output_dir: str, experiment_name: str
+) -> bool:
+    """Check if run_id is unique within the experiment directory.
+
+    Args:
+        run_id: Run ID to validate.
+        base_output_dir: Base output directory path.
+        experiment_name: Experiment name.
+
+    Returns:
+        True if run_id is unique, False if collision detected.
+    """
+    run_path = Path(base_output_dir) / "experiments" / experiment_name / "runs" / run_id
+    return not run_path.exists()

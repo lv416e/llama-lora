@@ -73,9 +73,25 @@ class HydraOutputConfig:
 
     def __post_init__(self) -> None:
         if not self.run_id:
-            from datetime import datetime
+            from llama_lora.utils.common import (
+                generate_unique_run_id,
+                validate_run_id_uniqueness,
+            )
 
-            self.run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+            self.run_id = generate_unique_run_id()
+
+            # Validate uniqueness and retry if needed
+            max_attempts = 5
+            for _ in range(max_attempts):
+                if validate_run_id_uniqueness(
+                    self.run_id, self.base_output_dir, self.experiment_name
+                ):
+                    break
+                self.run_id = generate_unique_run_id()
+            else:
+                raise RuntimeError(
+                    f"Failed to generate unique run_id after {max_attempts} attempts"
+                )
 
         experiment_base = f"{self.base_output_dir}/experiments/{self.experiment_name}"
         run_base = f"{experiment_base}/runs/{self.run_id}"
@@ -344,9 +360,25 @@ class OutputConfig(BaseModel):
 
     def model_post_init(self, __context) -> None:
         if not self.run_id:
-            from datetime import datetime
+            from llama_lora.utils.common import (
+                generate_unique_run_id,
+                validate_run_id_uniqueness,
+            )
 
-            self.run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+            self.run_id = generate_unique_run_id()
+
+            # Validate uniqueness and retry if needed
+            max_attempts = 5
+            for _ in range(max_attempts):
+                if validate_run_id_uniqueness(
+                    self.run_id, self.base_output_dir, self.experiment_name
+                ):
+                    break
+                self.run_id = generate_unique_run_id()
+            else:
+                raise RuntimeError(
+                    f"Failed to generate unique run_id after {max_attempts} attempts"
+                )
 
         experiment_base = f"{self.base_output_dir}/experiments/{self.experiment_name}"
         run_base = f"{experiment_base}/runs/{self.run_id}"
@@ -361,6 +393,21 @@ class OutputConfig(BaseModel):
             self.log_dir = f"{run_base}/logs"
         if not self.metadata_dir:
             self.metadata_dir = f"{run_base}/metadata"
+
+
+class CleanupPolicy(BaseModel):
+    """Cleanup policy configuration for experiment management."""
+
+    enabled: bool = Field(default=False, description="Enable automatic cleanup")
+    max_experiments_per_name: Optional[int] = Field(
+        default=10, description="Maximum experiments to keep per experiment name"
+    )
+    max_age_days: Optional[int] = Field(
+        default=30, description="Maximum age in days for experiments"
+    )
+    required_space_gb: Optional[float] = Field(
+        default=5.0, description="Required disk space in GB for saving operations"
+    )
 
 
 class LoggingConfig(BaseModel):
@@ -383,6 +430,7 @@ class Config(BaseModel):
     peft: PEFTConfig = Field(default_factory=PEFTConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
+    cleanup: CleanupPolicy = Field(default_factory=CleanupPolicy)
 
     model_config = {"validate_assignment": True}
 

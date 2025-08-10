@@ -203,7 +203,6 @@ def main(cfg: DictConfig) -> None:
 
         peft_model = load_peft_adapter(base_model, output_config.adapter_dir, device)
 
-        # Load tokenizer for atomic operation
         from transformers import AutoTokenizer
 
         tokenizer_path = (

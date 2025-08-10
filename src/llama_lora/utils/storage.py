@@ -1,10 +1,17 @@
 """Atomic file operations for robust artifact saving."""
 
+import os
 import shutil
 import tempfile
-from pathlib import Path
-from typing import List, Tuple
 from contextlib import contextmanager
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import List, Tuple, Optional
+
+try:
+    from tqdm import tqdm
+except ImportError:
+    tqdm = None
 
 from transformers import AutoTokenizer, PreTrainedModel
 from .exceptions import AtomicOperationError
@@ -13,15 +20,30 @@ from .exceptions import AtomicOperationError
 class AtomicSaver:
     """Manages atomic save operations with rollback capability."""
 
-    def __init__(self, base_dir: str):
+    def __init__(
+        self,
+        base_dir: str,
+        required_space_gb: Optional[float] = None,
+        show_progress: bool = True,
+    ):
         self.base_dir = Path(base_dir)
         self.temp_dirs: List[Path] = []
         self.operations: List[Tuple[Path, str]] = []
         self.success = False
+        self.required_space_gb = required_space_gb
+        self.show_progress = show_progress and tqdm is not None
 
     @contextmanager
     def atomic_operation(self):
         """Context manager for atomic operations with automatic cleanup."""
+        if self.required_space_gb:
+            if not DiskSpaceManager.check_available_space(
+                str(self.base_dir.parent), self.required_space_gb
+            ):
+                raise AtomicOperationError(
+                    f"Insufficient disk space: {self.required_space_gb}GB required"
+                )
+
         try:
             yield self
             self.success = True
@@ -80,7 +102,13 @@ class AtomicSaver:
 
     def _commit_all(self) -> None:
         """Move all temporary directories to final destinations."""
-        for temp_path, final_path in self.operations:
+        operations_iter = (
+            tqdm(self.operations, desc="Committing artifacts")
+            if self.show_progress
+            else self.operations
+        )
+
+        for temp_path, final_path in operations_iter:
             final_path = Path(final_path)
             if final_path.exists():
                 shutil.rmtree(final_path)
@@ -162,3 +190,203 @@ class PathManager:
         if not path or not path.strip():
             return False
         return Path(path).is_dir()
+
+
+class DiskSpaceManager:
+    """Disk space monitoring and management utilities."""
+
+    @staticmethod
+    def get_disk_usage(path: str) -> tuple[int, int, int]:
+        """Get disk usage statistics for given path.
+
+        Args:
+            path: Directory path to check.
+
+        Returns:
+            Tuple of (total, used, free) bytes.
+        """
+        import shutil
+
+        total, used, free = shutil.disk_usage(path)
+        return total, used, free
+
+    @staticmethod
+    def check_available_space(path: str, required_gb: float) -> bool:
+        """Check if sufficient disk space is available.
+
+        Args:
+            path: Directory path to check.
+            required_gb: Required space in GB.
+
+        Returns:
+            True if sufficient space available.
+        """
+        try:
+            _, _, free = DiskSpaceManager.get_disk_usage(path)
+            required_bytes = required_gb * 1024**3
+            return free >= required_bytes
+        except OSError:
+            return False
+
+    @staticmethod
+    def get_directory_size(path: str) -> int:
+        """Calculate total size of directory in bytes.
+
+        Args:
+            path: Directory path.
+
+        Returns:
+            Total size in bytes.
+        """
+        total_size = 0
+        try:
+            for dirpath, dirnames, filenames in os.walk(path):
+                for filename in filenames:
+                    filepath = os.path.join(dirpath, filename)
+                    if os.path.exists(filepath):
+                        total_size += os.path.getsize(filepath)
+        except (OSError, FileNotFoundError):
+            pass
+        return total_size
+
+    @staticmethod
+    def cleanup_old_experiments(
+        base_output_dir: str,
+        max_experiments: Optional[int] = None,
+        max_age_days: Optional[int] = None,
+    ) -> List[str]:
+        """Clean up old experiment directories based on policy.
+
+        Args:
+            base_output_dir: Base output directory.
+            max_experiments: Maximum number of experiments to keep per experiment name.
+            max_age_days: Maximum age in days for experiments.
+
+        Returns:
+            List of cleaned up experiment paths.
+        """
+        from .exceptions import StorageError
+
+        cleaned_paths = []
+        experiments_dir = Path(base_output_dir) / "experiments"
+
+        if not experiments_dir.exists():
+            return cleaned_paths
+
+        try:
+            for experiment_dir in experiments_dir.iterdir():
+                if not experiment_dir.is_dir():
+                    continue
+
+                runs_dir = experiment_dir / "runs"
+                if not runs_dir.exists():
+                    continue
+
+                # Get all runs with timestamps
+                runs_with_time = []
+                for run_dir in runs_dir.iterdir():
+                    if run_dir.is_dir():
+                        try:
+                            # Extract timestamp from directory name or modification time
+                            mtime = datetime.fromtimestamp(run_dir.stat().st_mtime)
+                            runs_with_time.append((run_dir, mtime))
+                        except (OSError, ValueError):
+                            continue
+
+                # Sort by modification time (newest first)
+                runs_with_time.sort(key=lambda x: x[1], reverse=True)
+
+                # Apply cleanup policies
+                to_remove = []
+
+                # Age-based cleanup
+                if max_age_days is not None:
+                    cutoff_date = datetime.now() - timedelta(days=max_age_days)
+                    to_remove.extend(
+                        [
+                            run_dir
+                            for run_dir, mtime in runs_with_time
+                            if mtime < cutoff_date
+                        ]
+                    )
+
+                # Count-based cleanup (keep newest max_experiments)
+                if (
+                    max_experiments is not None
+                    and len(runs_with_time) > max_experiments
+                ):
+                    to_remove.extend(
+                        [run_dir for run_dir, _ in runs_with_time[max_experiments:]]
+                    )
+
+                # Remove duplicates and perform cleanup
+                for run_dir in set(to_remove):
+                    try:
+                        shutil.rmtree(run_dir)
+                        cleaned_paths.append(str(run_dir))
+                    except (OSError, PermissionError):
+                        continue
+
+        except (OSError, PermissionError) as e:
+            raise StorageError(
+                f"Failed to clean up experiments: {str(e)}",
+                path=str(experiments_dir),
+                operation="cleanup",
+            ) from e
+
+        return cleaned_paths
+
+
+class EfficientFileOperations:
+    """Advanced file operations for large models."""
+
+    @staticmethod
+    def create_hardlink_if_possible(source: Path, target: Path) -> bool:
+        """Create hardlink if possible, fallback to copy.
+
+        Args:
+            source: Source file path.
+            target: Target file path.
+
+        Returns:
+            True if hardlink created, False if copied.
+        """
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.hardlink_to(source)
+            return True
+        except (OSError, NotImplementedError):
+            shutil.copy2(source, target)
+            return False
+
+    @staticmethod
+    def copy_with_progress(
+        source: Path, target: Path, chunk_size: int = 1024 * 1024
+    ) -> None:
+        """Copy file with progress bar for large files.
+
+        Args:
+            source: Source file path.
+            target: Target file path.
+            chunk_size: Chunk size for copying.
+        """
+        if not tqdm:
+            shutil.copy2(source, target)
+            return
+
+        file_size = source.stat().st_size
+        target.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(source, "rb") as src, open(target, "wb") as dst:
+            with tqdm(
+                total=file_size,
+                unit="B",
+                unit_scale=True,
+                desc=f"Copying {source.name}",
+            ) as pbar:
+                while True:
+                    chunk = src.read(chunk_size)
+                    if not chunk:
+                        break
+                    dst.write(chunk)
+                    pbar.update(len(chunk))
