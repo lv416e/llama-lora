@@ -100,21 +100,21 @@ class TokenizerUtils:
 
         Returns:
             Dict containing tokenized inputs.
-            
+
         Note:
             Handles missing or empty fields gracefully with safe defaults.
         """
         # Safely extract fields with fallbacks for missing data
-        instruction = example.get('instruction', '').strip()
-        input_text = example.get('input', '').strip()
-        output = example.get('output', '').strip()
-        
+        instruction = example.get("instruction", "").strip()
+        input_text = example.get("input", "").strip()
+        output = example.get("output", "").strip()
+
         # Provide default values for empty essential fields
         if not instruction:
             instruction = "Please respond to the following."
         if not output:
             output = "I understand."
-            
+
         # Build prompt with conditional input section
         if input_text:
             text = (
@@ -128,7 +128,7 @@ class TokenizerUtils:
                 f"### Input:\n\n"
                 f"### Response:\n{output}"
             )
-            
+
         return tokenizer(
             text, truncation=True, max_length=max_length, padding="max_length"
         )

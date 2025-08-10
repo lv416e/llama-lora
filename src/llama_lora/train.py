@@ -183,8 +183,10 @@ def load_and_setup_model(cfg: DictConfig) -> Any:
         ModelLoadingError: If model loading fails.
     """
     try:
-        logger.info(f"Loading base model '{cfg.model.model_id}' with auto optimization...")
-        
+        logger.info(
+            f"Loading base model '{cfg.model.model_id}' with auto optimization..."
+        )
+
         # Latest best practices: auto device mapping, dtype, and Flash Attention
         model = AutoModelForCausalLM.from_pretrained(
             cfg.model.model_id,
@@ -318,10 +320,10 @@ def main(cfg: DictConfig) -> None:
 
         # Setup data collator with dynamic padding for memory efficiency
         collator = DataCollatorForLanguageModeling(
-            tokenizer=tokenizer, 
+            tokenizer=tokenizer,
             mlm=False,
             pad_to_multiple_of=8,  # Optimize for tensor cores
-            return_tensors="pt"
+            return_tensors="pt",
         )
 
         # Load and setup model
