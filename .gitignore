@@ -12,6 +12,9 @@ wheels/
 .venv
 
 # Output directories from training
+outputs/**
+!outputs/.gitkeep
+
 out-tinyllama-lora
 out-llama-lora
 

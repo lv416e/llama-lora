@@ -7,42 +7,42 @@ This document explains how to use the new Hydra + Pydantic-based configuration m
 ### 1. Run training with default settings
 
 ```bash
-python -m llama_lora.train
+uv run python -m llama_lora.train
 ```
 
 ### 2. Override settings with command line arguments
 
 ```bash
-python -m llama_lora.train training.lr=1e-5
+uv run python -m llama_lora.train training.lr=1e-5
 
-python -m llama_lora.train training.lr=3e-5 training.epochs=3 model.seq_len=2048
+uv run python -m llama_lora.train training.lr=3e-5 training.epochs=3 model.seq_len=2048
 
-python -m llama_lora.train training.batch_size=2 training.gradient_accumulation_steps=4
+uv run python -m llama_lora.train training.batch_size=2 training.gradient_accumulation_steps=4
 ```
 
 ### 3. Use experiment configurations
 
 ```bash
-python -m llama_lora.train +experiment=quick_test
+uv run python -m llama_lora.train +experiment=quick_test
 
-python -m llama_lora.train +experiment=full_training
+uv run python -m llama_lora.train +experiment=full_training
 
-python -m llama_lora.train +experiment=dora_experiment
+uv run python -m llama_lora.train +experiment=dora_experiment
 ```
 
 ### 4. Combine configurations
 
 ```bash
-python -m llama_lora.train +experiment=quick_test training.lr=5e-5
+uv run python -m llama_lora.train +experiment=quick_test training.lr=5e-5
 
-python -m llama_lora.train +experiment=quick_test model.model_id="meta-llama/Llama-3.2-3B-Instruct"
+uv run python -m llama_lora.train +experiment=quick_test model.model_id="meta-llama/Llama-3.2-3B-Instruct"
 ```
 
 ## Configuration Validation
 
 ```bash
-python -m llama_lora.validate
-python -m llama_lora.validate +experiment=full_training
+uv run python -m llama_lora.validate
+uv run python -m llama_lora.validate +experiment=full_training
 ```
 
 ## Configuration File Structure
@@ -78,7 +78,7 @@ config/
 - `dataset.val_ratio`: Validation set ratio (0.0-0.5)
 
 ### PEFT Configuration
-- `peft.r`: LoRA rank (1-1024)
+- `peft.r`: LoRA rank (1-256)
 - `peft.lora_alpha`: LoRA alpha value
 - `peft.lora_dropout`: LoRA dropout rate (0.0-1.0)
 - `peft.target_modules`: Target modules list
@@ -122,4 +122,3 @@ python -m llama_lora.train +experiment=my_experiment
 - All configuration values are type-checked and validated by Pydantic
 - Invalid values are detected before execution
 - Configuration combination issues trigger warnings
-

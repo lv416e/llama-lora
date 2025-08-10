@@ -1,5 +1,0 @@
-- training=quick
-- model.model_id=microsoft/DialoGPT-small
-- training.epochs=1
-- training.eval_steps=50
-- dataset.val_ratio=0.05

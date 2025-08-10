@@ -38,7 +38,6 @@ from .utils.exceptions import (
 )
 
 # PydanticベースのHydra設定スキーマをConfigStoreに登録する
-import config.schema
 
 warnings.filterwarnings("ignore", category=UserWarning, message=".*tokenizers.*")
 
@@ -57,7 +56,7 @@ def validate_and_log_config(cfg: DictConfig) -> None:
     """
     # Convert Hydra config to Pydantic for validation
     from config.schema import HydraConfig
-    
+
     # Create HydraConfig instance from DictConfig
     hydra_config = HydraConfig(
         model=cfg.model,
@@ -65,12 +64,12 @@ def validate_and_log_config(cfg: DictConfig) -> None:
         training=cfg.training,
         peft=cfg.peft,
         output=cfg.output,
-        logging=cfg.logging
+        logging=cfg.logging,
     )
-    
+
     # Convert to Pydantic for validation
-    pydantic_config = hydra_config.to_pydantic_config()
-    
+    hydra_config.to_pydantic_config()
+
     logger.info("Configuration Summary:")
     logger.info("=" * 50)
     logger.info(f"Model: {cfg.model.model_id}")
@@ -96,7 +95,7 @@ def validate_and_log_config(cfg: DictConfig) -> None:
 
     if cfg.peft.r < 1:
         raise ConfigurationError(f"LoRA rank must be >= 1, got {cfg.peft.r}")
-        
+
     logger.info("Configuration validation successful!")
 
 

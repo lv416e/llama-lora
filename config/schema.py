@@ -10,15 +10,13 @@ from typing import List, Literal, Optional
 from pydantic import BaseModel, Field, model_validator
 from hydra.core.config_store import ConfigStore
 from hydra.core.hydra_config import HydraConfig
-from omegaconf import DictConfig, OmegaConf
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 # Hydra互換性のためのdataclassベース設定
 @dataclass
 class HydraModelConfig:
-    model_id: str = "microsoft/DialoGPT-medium"
+    model_id: str = "meta-llama/Llama-3.2-1B-Instruct"
     use_dora: bool = False
     seq_len: int = 512
 
@@ -50,26 +48,37 @@ class HydraPEFTConfig:
 
     def __post_init__(self):
         if self.target_modules is None:
-            self.target_modules = ["c_attn", "c_proj"]
+            # LLaMA 系モデル向けの一般的なLoRA対象
+            self.target_modules = [
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "down_proj",
+                "up_proj",
+            ]
 
 
 @dataclass
 class HydraOutputConfig:
-    base_output_dir: str = "./output"
-    adapter_dir: str = "./output/adapter"
-    tokenizer_dir: str = "./output/tokenizer"
-    merged_dir: str = "./output/merged"
-    log_dir: str = "./output/logs"
+    base_output_dir: str = "./outputs"
+    adapter_dir: str = "./outputs/adapter"
+    tokenizer_dir: str = "./outputs/tokenizer"
+    merged_dir: str = "./outputs/merged"
+    log_dir: str = "./outputs/runs"
 
 
 @dataclass
 class HydraLoggingConfig:
     report_to: str = "none"
+    project_name: Optional[str] = None
 
 
 @dataclass
 class HydraConfig:
     """Hydra互換のmain configuration class (dataclass based)."""
+
     model: HydraModelConfig = field(default_factory=HydraModelConfig)
     dataset: HydraDatasetConfig = field(default_factory=HydraDatasetConfig)
     training: HydraTrainingConfig = field(default_factory=HydraTrainingConfig)
@@ -82,18 +91,18 @@ class HydraConfig:
         if self.peft.target_modules is None:
             self.peft.target_modules = ["q_proj", "v_proj"]
 
-    def to_pydantic_config(self) -> 'Config':
+    def to_pydantic_config(self) -> "Config":
         """Convert to Pydantic Config for validation."""
         return Config(
             model=ModelConfig(
                 model_id=self.model.model_id,
                 use_dora=self.model.use_dora,
-                seq_len=self.model.seq_len
+                seq_len=self.model.seq_len,
             ),
             dataset=DatasetConfig(
                 dataset_id=self.dataset.dataset_id,
                 dataset_split=self.dataset.dataset_split,
-                val_ratio=self.dataset.val_ratio
+                val_ratio=self.dataset.val_ratio,
             ),
             training=TrainingConfig(
                 lr=self.training.lr,
@@ -102,73 +111,118 @@ class HydraConfig:
                 epochs=self.training.epochs,
                 seed=self.training.seed,
                 eval_steps=self.training.eval_steps,
-                early_stopping_patience=self.training.early_stopping_patience
+                early_stopping_patience=self.training.early_stopping_patience,
             ),
             peft=PEFTConfig(
                 r=self.peft.r,
                 lora_alpha=self.peft.lora_alpha,
                 lora_dropout=self.peft.lora_dropout,
-                target_modules=self.peft.target_modules
+                target_modules=self.peft.target_modules,
             ),
             output=OutputConfig(
                 base_output_dir=self.output.base_output_dir,
                 adapter_dir=self.output.adapter_dir,
                 tokenizer_dir=self.output.tokenizer_dir,
                 merged_dir=self.output.merged_dir,
-                log_dir=self.output.log_dir
+                log_dir=self.output.log_dir,
             ),
             logging=LoggingConfig(
-                report_to=self.logging.report_to
-            )
+                report_to=self.logging.report_to,
+                project_name=self.logging.project_name,
+            ),
         )
 
 
 # Original Pydantic classes for validation
 class ModelConfig(BaseModel):
     """Model configuration with validation."""
-    model_id: str = Field(default="microsoft/DialoGPT-medium", description="Model identifier")
+
+    model_id: str = Field(
+        default="meta-llama/Llama-3.2-1B-Instruct", description="Model identifier"
+    )
     use_dora: bool = Field(default=False, description="Use DoRA instead of LoRA")
-    seq_len: int = Field(default=512, ge=1, le=8192, description="Maximum sequence length")
+    seq_len: int = Field(
+        default=512, ge=1, le=8192, description="Maximum sequence length"
+    )
 
 
 class DatasetConfig(BaseModel):
     """Dataset configuration with validation."""
-    dataset_id: str = Field(default="tatsu-lab/alpaca", description="Dataset identifier")
+
+    dataset_id: str = Field(
+        default="tatsu-lab/alpaca", description="Dataset identifier"
+    )
     dataset_split: str = Field(default="train", description="Dataset split to use")
-    val_ratio: float = Field(default=0.1, ge=0.0, le=0.5, description="Validation split ratio")
+    val_ratio: float = Field(
+        default=0.1, ge=0.0, le=0.5, description="Validation split ratio"
+    )
 
 
 class TrainingConfig(BaseModel):
     """Training configuration with validation."""
+
     lr: float = Field(default=2e-4, gt=0.0, lt=1.0, description="Learning rate")
     batch_size: int = Field(default=4, ge=1, le=128, description="Training batch size")
-    gradient_accumulation_steps: int = Field(default=4, ge=1, description="Gradient accumulation steps")
-    epochs: int = Field(default=3, ge=1, le=100, description="Number of training epochs")
+    gradient_accumulation_steps: int = Field(
+        default=4, ge=1, description="Gradient accumulation steps"
+    )
+    epochs: int = Field(
+        default=3, ge=1, le=100, description="Number of training epochs"
+    )
     seed: int = Field(default=42, ge=0, description="Random seed")
     eval_steps: int = Field(default=200, ge=1, description="Evaluation frequency")
-    early_stopping_patience: int = Field(default=3, ge=1, description="Early stopping patience")
+    early_stopping_patience: int = Field(
+        default=3, ge=1, description="Early stopping patience"
+    )
 
 
 class PEFTConfig(BaseModel):
     """PEFT (LoRA/DoRA) configuration with validation."""
+
     r: int = Field(default=16, ge=1, le=256, description="LoRA rank")
     lora_alpha: int = Field(default=32, ge=1, description="LoRA alpha parameter")
     lora_dropout: float = Field(default=0.1, ge=0.0, le=1.0, description="LoRA dropout")
-    target_modules: List[str] = Field(default=["c_attn", "c_proj"], description="Target modules for LoRA")
+    target_modules: List[str] = Field(
+        default=[
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "gate_proj",
+            "down_proj",
+            "up_proj",
+        ],
+        description="Target modules for LoRA",
+    )
 
 
 class OutputConfig(BaseModel):
     """Output configuration with validation."""
-    base_output_dir: str = Field(default="./output", description="Base output directory")
-    adapter_dir: str = Field(default="./output/adapter", description="Adapter output directory")
-    tokenizer_dir: str = Field(default="./output/tokenizer", description="Tokenizer output directory")
-    merged_dir: str = Field(default="./output/merged", description="Merged model output directory")
-    log_dir: str = Field(default="./output/logs", description="Logs output directory")
+
+    base_output_dir: str = Field(
+        default="./outputs", description="Base output directory"
+    )
+    adapter_dir: str = Field(
+        default="./outputs/adapter", description="Adapter output directory"
+    )
+    tokenizer_dir: str = Field(
+        default="./outputs/tokenizer", description="Tokenizer output directory"
+    )
+    merged_dir: str = Field(
+        default="./outputs/merged", description="Merged model output directory"
+    )
+    log_dir: str = Field(default="./outputs/runs", description="Logs output directory")
 
 
 class LoggingConfig(BaseModel):
     """Logging configuration with validation."""
-    report_to: Literal["none", "wandb", "tensorboard"] = Field(default="none", description="Logging backend")
+
+    report_to: Literal["none", "wandb", "tensorboard"] = Field(
+        default="none", description="Logging backend"
+    )
+    project_name: Optional[str] = Field(
+        default=None, description="Experiment or project name for logging"
+    )
 
 
 class Config(BaseModel):
@@ -220,13 +274,15 @@ cs.store(name="base_config", node=HydraConfig)
 # Register individual config groups for different configurations
 cs.store(group="model", name="small", node=HydraModelConfig())
 cs.store(
-    group="model", 
-    name="llama_3b", 
-    node=HydraModelConfig(model_id="meta-llama/Llama-3.2-3B-Instruct")
+    group="model",
+    name="llama_3b",
+    node=HydraModelConfig(model_id="meta-llama/Llama-3.2-3B-Instruct"),
 )
 
 cs.store(group="dataset", name="alpaca", node=HydraDatasetConfig())
-cs.store(group="dataset", name="alpaca_full", node=HydraDatasetConfig(dataset_split="train"))
+cs.store(
+    group="dataset", name="alpaca_full", node=HydraDatasetConfig(dataset_split="train")
+)
 
 cs.store(group="training", name="quick", node=HydraTrainingConfig(epochs=1, lr=2e-5))
 cs.store(group="training", name="standard", node=HydraTrainingConfig(epochs=3, lr=1e-5))
