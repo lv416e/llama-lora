@@ -39,9 +39,11 @@ def load_tokenizer_with_fallback(
         ModelLoadingError: If tokenizer loading fails.
     """
     try:
-        path = (
-            tokenizer_path if PathManager.directory_exists(tokenizer_path) else model_id
-        )
+        try:
+            PathManager.validate_directory_exists(tokenizer_path)
+            path = tokenizer_path
+        except FileNotFoundError:
+            path = model_id
         logger.info(f"Loading tokenizer from '{path}'...")
 
         tokenizer = AutoTokenizer.from_pretrained(path, use_fast=True)
@@ -62,13 +64,15 @@ def validate_adapter_directory(adapter_dir: str) -> None:
     Raises:
         AdapterError: If adapter directory does not exist.
     """
-    if not os.path.isdir(adapter_dir):
+    try:
+        PathManager.validate_directory_exists(adapter_dir, "Adapter directory")
+    except FileNotFoundError as e:
         error_msg = (
             f"Adapter directory not found at '{adapter_dir}'. "
             "Please run a training script to create an adapter first."
         )
         logger.error(error_msg)
-        raise AdapterError(error_msg)
+        raise AdapterError(error_msg) from e
 
 
 def load_base_model(model_id: str) -> Any:
@@ -85,13 +89,25 @@ def load_base_model(model_id: str) -> Any:
     """
     try:
         logger.info(f"Loading base model '{model_id}' with auto optimization...")
-        return AutoModelForCausalLM.from_pretrained(
-            model_id,
-            device_map="auto",
-            torch_dtype="auto",
-            attn_implementation="flash_attention_2",
-            trust_remote_code=True,
-        )
+        
+        # Try FlashAttention2 first, fallback to eager if not available
+        try:
+            return AutoModelForCausalLM.from_pretrained(
+                model_id,
+                device_map="auto",
+                torch_dtype="auto",
+                attn_implementation="flash_attention_2",
+                trust_remote_code=True,
+            )
+        except ImportError:
+            logger.warning("FlashAttention2 not available, falling back to eager attention")
+            return AutoModelForCausalLM.from_pretrained(
+                model_id,
+                device_map="auto",
+                torch_dtype="auto",
+                attn_implementation="eager",
+                trust_remote_code=True,
+            )
     except Exception as e:
         raise ModelLoadingError(
             f"Failed to load base model '{model_id}': {str(e)}"

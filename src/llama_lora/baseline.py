@@ -5,6 +5,7 @@ It uses Hydra to load the model configuration, providing a baseline for
 comparison with fine-tuned models.
 """
 
+import argparse
 import warnings
 from typing import Any, Dict, List
 
@@ -107,29 +108,65 @@ def _run_inference_examples(
     print(separator)
 
 
-@hydra.main(version_base=None, config_path="../../config", config_name="config")
-def main(cfg: DictConfig) -> None:
+def main(args) -> None:
     """Main function for baseline model inference using Hydra config."""
     try:
+        logger.info("Starting baseline inference process...")
+        
+        with hydra.initialize(version_base=None, config_path="../../config"):
+            cfg = hydra.compose(config_name="config")
+        
         device = DeviceManager.detect_device()
         logger.info(f"Using device: {device}")
 
         model_id = cfg.model.model_id
-        logger.info(f"Loading base model {model_id}...")
+        logger.info(f"Loading base model '{model_id}' with auto optimization...")
 
-        model = AutoModelForCausalLM.from_pretrained(
-            model_id,
-            device_map="auto",
-            torch_dtype="auto",
-            attn_implementation="flash_attention_2",
-            trust_remote_code=True,
-        ).eval()
+        # Try FlashAttention2 first, fallback to eager if not available
+        try:
+            model = AutoModelForCausalLM.from_pretrained(
+                model_id,
+                device_map="auto",
+                torch_dtype="auto",
+                attn_implementation="flash_attention_2",
+                trust_remote_code=True,
+            ).eval()
+        except ImportError:
+            logger.warning("FlashAttention2 not available, falling back to eager attention")
+            model = AutoModelForCausalLM.from_pretrained(
+                model_id,
+                device_map="auto",
+                torch_dtype="auto",
+                attn_implementation="eager",
+                trust_remote_code=True,
+            ).eval()
 
         tokenizer = AutoTokenizer.from_pretrained(model_id, use_fast=True)
         tokenizer = TokenizerUtils.setup_tokenizer(tokenizer)
 
-        logger.info("Running inference examples")
-        _run_inference_examples(model, tokenizer)
+        logger.info(
+            f"Generation parameters: max_tokens={args.max_new_tokens}, "
+            f"temperature={args.temperature}, top_p={args.top_p}"
+        )
+
+        print("-" * 50)
+        print(f"Prompt:\n{args.prompt}\n")
+        logger.info(f"Processing prompt (length: {len(args.prompt)} chars)")
+
+        response = generate(
+            model=model,
+            tokenizer=tokenizer,
+            prompt=args.prompt,
+            max_new_tokens=args.max_new_tokens,
+            temperature=args.temperature,
+            top_p=args.top_p,
+        )
+
+        print("Response:")
+        print(response)
+        print("-" * 50)
+
+        logger.info("Baseline inference completed successfully")
 
     except Exception as e:
         logger.error(f"Baseline inference failed: {str(e)}", exc_info=True)
@@ -137,4 +174,29 @@ def main(cfg: DictConfig) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(
+        description="Run baseline inference with the base model using Hydra configuration.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("prompt", type=str, help="Input text prompt for generation.")
+    parser.add_argument(
+        "--max_new_tokens",
+        type=int,
+        default=128,
+        help="Maximum number of new tokens to generate (default: 128).",
+    )
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=0.7,
+        help="Sampling temperature (0.0-2.0, higher = more random, default: 0.7).",
+    )
+    parser.add_argument(
+        "--top_p",
+        type=float,
+        default=0.9,
+        help="Nucleus sampling parameter (0.0-1.0, default: 0.9).",
+    )
+
+    cli_args = parser.parse_args()
+    main(cli_args)
