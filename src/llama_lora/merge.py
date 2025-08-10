@@ -13,7 +13,8 @@ from omegaconf import DictConfig
 from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from .utils.common import PathManager, setup_logging
+from .utils.common import setup_logging
+from .utils.storage import PathManager
 from .utils.exceptions import ModelLoadingError, AdapterError
 
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -107,28 +108,25 @@ def load_peft_adapter(base_model: Any, adapter_dir: str, device: str) -> Any:
         ) from e
 
 
-def merge_and_save_model(peft_model: Any, merged_dir: str) -> Any:
-    """Merge adapter weights and save the model.
+def merge_and_save_model(
+    peft_model: Any, tokenizer: AutoTokenizer, merged_dir: str
+) -> Any:
+    """Merge adapter weights and save model with tokenizer atomically."""
+    from llama_lora.utils.storage import AtomicSaver
 
-    Args:
-        peft_model: PEFT model with adapter.
-        merged_dir: Directory to save merged model.
-
-    Returns:
-        Merged model.
-
-    Raises:
-        ModelLoadingError: If merging or saving fails.
-    """
     try:
         logger.info("Merging adapter weights into the base model...")
         merged_model = peft_model.merge_and_unload()
         logger.info("Merge complete.")
 
-        PathManager.ensure_directory(merged_dir)
+        logger.info(
+            f"Saving merged model and tokenizer atomically to '{merged_dir}'..."
+        )
 
-        logger.info(f"Saving merged model to '{merged_dir}'...")
-        merged_model.save_pretrained(merged_dir)
+        with AtomicSaver(merged_dir).atomic_operation() as saver:
+            saver.save_merged_artifacts(
+                merged_model=merged_model, tokenizer=tokenizer, merged_dir=merged_dir
+            )
 
         return merged_model
 
@@ -204,13 +202,25 @@ def main(cfg: DictConfig) -> None:
         base_model = load_base_model(model_id)
 
         peft_model = load_peft_adapter(base_model, output_config.adapter_dir, device)
-        merge_and_save_model(peft_model, output_config.merged_dir)
 
-        save_tokenizer(output_config.tokenizer_dir, model_id, output_config.merged_dir)
+        # Load tokenizer for atomic operation
+        from transformers import AutoTokenizer
+
+        tokenizer_path = (
+            output_config.tokenizer_dir
+            if PathManager.directory_exists(output_config.tokenizer_dir)
+            else model_id
+        )
+        tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, use_fast=True)
+
+        merge_and_save_model(peft_model, tokenizer, output_config.merged_dir)
+
+        from datetime import datetime
 
         merge_metadata = {
             "operation": "model_merge",
-            "timestamp": OmegaConf.to_container(cfg, resolve=True),
+            "timestamp": datetime.now().isoformat(),
+            "config": OmegaConf.to_container(cfg, resolve=True),
             "source_adapter": output_config.adapter_dir,
             "source_tokenizer": output_config.tokenizer_dir,
             "output_merged": output_config.merged_dir,

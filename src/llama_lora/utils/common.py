@@ -3,7 +3,6 @@
 import logging
 import os
 import random
-from pathlib import Path
 from typing import Any, Dict
 
 import torch
@@ -129,72 +128,6 @@ class TokenizerUtils:
         return tokenizer(
             text, truncation=True, max_length=max_length, padding="max_length"
         )
-
-
-class PathManager:
-    """Utility functions for path and directory management."""
-
-    @staticmethod
-    def ensure_directory(path: str) -> Path:
-        """Ensure directory exists and return Path object.
-
-        Args:
-            path: Directory path string.
-
-        Returns:
-            Path object.
-
-        Raises:
-            ValueError: If path is empty or invalid.
-            PermissionError: If directory cannot be created.
-        """
-        if not path or not path.strip():
-            raise ValueError("Directory path cannot be empty")
-
-        dir_path = Path(path)
-
-        # Additional validation for absolute vs relative paths
-        if not dir_path.is_absolute() and not str(dir_path).startswith("./"):
-            # Convert relative paths to explicit relative paths for clarity
-            dir_path = Path(".") / dir_path
-
-        try:
-            dir_path.mkdir(parents=True, exist_ok=True)
-            return dir_path
-        except PermissionError as e:
-            raise PermissionError(f"Cannot create directory: {dir_path}") from e
-
-    @staticmethod
-    def validate_directory_exists(path: str, purpose: str = "directory") -> None:
-        """Validate that a directory exists.
-
-        Args:
-            path: Directory path to check.
-            purpose: Description of what the directory is for (for error messages).
-
-        Raises:
-            ValueError: If path is empty.
-            FileNotFoundError: If directory does not exist.
-        """
-        if not path or not path.strip():
-            raise ValueError(f"{purpose.capitalize()} path cannot be empty")
-
-        if not os.path.isdir(path):
-            raise FileNotFoundError(f"{purpose.capitalize()} not found at '{path}'")
-
-    @staticmethod
-    def directory_exists(path: str) -> bool:
-        """Check if a directory exists.
-
-        Args:
-            path: Directory path to check.
-
-        Returns:
-            True if directory exists, False otherwise.
-        """
-        if not path or not path.strip():
-            return False
-        return os.path.isdir(path)
 
 
 def setup_logging(level: str = "INFO") -> logging.Logger:

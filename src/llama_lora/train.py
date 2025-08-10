@@ -270,29 +270,24 @@ def setup_training_arguments(
 
 
 def save_artifacts(output_config, model: Any, tokenizer: AutoTokenizer) -> None:
-    """Save trained artifacts with error handling.
+    """Save trained artifacts atomically with rollback on failure."""
+    from llama_lora.utils.storage import AtomicSaver
 
-    Args:
-        output_config: Unified output configuration with structured paths.
-        model: Trained model.
-        tokenizer: Tokenizer.
-
-    Raises:
-        TrainingError: If saving fails.
-    """
     try:
-        logger.info(f"Saving adapter to {output_config.adapter_dir}")
-        PathManager.ensure_directory(output_config.adapter_dir)
-        model.save_pretrained(output_config.adapter_dir)
+        logger.info("Starting atomic save of training artifacts")
 
-        logger.info(f"Saving tokenizer to {output_config.tokenizer_dir}")
-        PathManager.ensure_directory(output_config.tokenizer_dir)
-        tokenizer.save_pretrained(output_config.tokenizer_dir)
+        with AtomicSaver(output_config.adapter_dir).atomic_operation() as saver:
+            saver.save_model_artifacts(
+                model=model,
+                tokenizer=tokenizer,
+                adapter_dir=output_config.adapter_dir,
+                tokenizer_dir=output_config.tokenizer_dir,
+            )
 
         logger.info("All artifacts saved successfully")
 
     except Exception as e:
-        raise TrainingError(f"Failed to save artifacts: {str(e)}") from e
+        raise TrainingError(f"Failed to save artifacts atomically: {str(e)}") from e
 
 
 @hydra.main(version_base=None, config_path="../../config", config_name="config")

@@ -95,35 +95,40 @@ class HydraOutputConfig:
 def save_experiment_metadata(
     cfg_dict: Dict[str, Any], output_config: "OutputConfig"
 ) -> str:
-    """Save experiment metadata to metadata directory."""
+    """Save experiment metadata with comprehensive error handling."""
     import json
-    import os
     from datetime import datetime
+    from pathlib import Path
 
-    metadata_dir = output_config.metadata_dir
-    os.makedirs(metadata_dir, exist_ok=True)
+    try:
+        metadata_dir = Path(output_config.metadata_dir)
+        metadata_dir.mkdir(parents=True, exist_ok=True)
 
-    # Create metadata
-    metadata = {
-        "experiment_name": output_config.experiment_name,
-        "run_id": output_config.run_id,
-        "timestamp": datetime.now().isoformat(),
-        "config": cfg_dict,
-        "output_paths": {
-            "adapter_dir": output_config.adapter_dir,
-            "tokenizer_dir": output_config.tokenizer_dir,
-            "merged_dir": output_config.merged_dir,
-            "log_dir": output_config.log_dir,
-            "metadata_dir": output_config.metadata_dir,
-        },
-    }
+        metadata = {
+            "experiment_name": output_config.experiment_name,
+            "run_id": output_config.run_id,
+            "timestamp": datetime.now().isoformat(),
+            "config": cfg_dict,
+            "output_paths": {
+                "adapter_dir": output_config.adapter_dir,
+                "tokenizer_dir": output_config.tokenizer_dir,
+                "merged_dir": output_config.merged_dir,
+                "log_dir": output_config.log_dir,
+                "metadata_dir": output_config.metadata_dir,
+            },
+        }
 
-    # Save metadata
-    metadata_file = os.path.join(metadata_dir, "experiment_metadata.json")
-    with open(metadata_file, "w") as f:
-        json.dump(metadata, f, indent=2)
+        metadata_file = metadata_dir / "experiment_metadata.json"
 
-    return metadata_file
+        temp_file = metadata_file.with_suffix(".tmp")
+        with open(temp_file, "w") as f:
+            json.dump(metadata, f, indent=2)
+
+        temp_file.rename(metadata_file)
+        return str(metadata_file)
+
+    except (OSError, IOError, PermissionError) as e:
+        raise RuntimeError(f"Failed to save experiment metadata: {str(e)}") from e
 
 
 def get_tensorboard_log_dir(output_config: "OutputConfig") -> str:

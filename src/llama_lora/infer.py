@@ -15,7 +15,8 @@ import torch
 from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedTokenizer
 
-from .utils.common import DeviceManager, TokenizerUtils, PathManager, setup_logging
+from .utils.common import DeviceManager, TokenizerUtils, setup_logging
+from .utils.storage import PathManager
 from .utils.exceptions import ModelLoadingError, AdapterError
 
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -188,26 +189,20 @@ def generate_response(
 
 
 def main(args: argparse.Namespace) -> None:
-    """Main inference function using Hydra for configuration.
+    """Main inference function with result logging."""
+    import time
+    from llama_lora.utils.results import InferenceLogger
 
-    Args:
-        args: Command line arguments containing prompt and generation parameters.
-
-    This function orchestrates the complete inference pipeline:
-    - Loads Hydra configuration
-    - Detects optimal device
-    - Validates adapter directory
-    - Loads model and tokenizer
-    - Generates text response
-    """
     try:
-        logger.info("Starting inference process...")
+        logger.info("Starting inference process with result logging")
 
         with hydra.initialize(version_base=None, config_path="../../config"):
             cfg = hydra.compose(config_name="config")
 
         pydantic_cfg = cfg.to_pydantic_config()
         output_config = pydantic_cfg.output
+
+        inference_logger = InferenceLogger(output_config, "fine_tuned")
 
         device = DeviceManager.detect_device()
         logger.info(f"Using device: {device}")
@@ -224,6 +219,19 @@ def main(args: argparse.Namespace) -> None:
             output_config.tokenizer_dir, cfg.model.model_id
         )
 
+        generation_params = {
+            "max_new_tokens": args.max_new_tokens,
+            "temperature": args.temperature,
+            "top_p": args.top_p,
+        }
+
+        model_config = {
+            "model_id": cfg.model.model_id,
+            "adapter_path": output_config.adapter_dir,
+            "tokenizer_path": output_config.tokenizer_dir,
+            "device": str(device),
+        }
+
         logger.info(
             f"Generation parameters: max_tokens={args.max_new_tokens}, "
             f"temperature={args.temperature}, top_p={args.top_p}"
@@ -233,20 +241,34 @@ def main(args: argparse.Namespace) -> None:
         print(f"Prompt:\n{args.prompt}\n")
         logger.info(f"Processing prompt (length: {len(args.prompt)} chars)")
 
+        start_time = time.time()
         response = generate_response(
             model=model,
             tokenizer=tokenizer,
             prompt=args.prompt,
             device=device,
-            max_new_tokens=args.max_new_tokens,
-            temperature=args.temperature,
-            top_p=args.top_p,
+            **generation_params,
         )
+        execution_time = time.time() - start_time
 
         print("Response:")
         print(response)
         print("-" * 50)
 
+        inference_logger.log_inference(
+            prompt=args.prompt,
+            response=response,
+            model_config=model_config,
+            generation_params=generation_params,
+            execution_time=execution_time,
+            model_type="fine_tuned",
+        )
+
+        session_file = inference_logger.save_session()
+        comparison_file = inference_logger.export_comparison_data()
+
+        logger.info(f"Inference results saved to: {session_file}")
+        logger.info(f"Comparison data saved to: {comparison_file}")
         logger.info("Inference completed successfully")
 
     except Exception as e:

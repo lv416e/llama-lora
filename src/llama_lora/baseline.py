@@ -103,12 +103,20 @@ def _run_inference_examples(
 
 
 def main(args: argparse.Namespace) -> None:
-    """Main function for baseline model inference using Hydra config."""
+    """Main function for baseline model inference with result logging."""
+    import time
+    from llama_lora.utils.results import InferenceLogger
+
     try:
-        logger.info("Starting baseline inference process...")
+        logger.info("Starting baseline inference with result logging")
 
         with hydra.initialize(version_base=None, config_path="../../config"):
             cfg = hydra.compose(config_name="config")
+
+        pydantic_cfg = cfg.to_pydantic_config()
+        output_config = pydantic_cfg.output
+
+        inference_logger = InferenceLogger(output_config, "baseline")
 
         device = DeviceManager.detect_device()
         logger.info(f"Using device: {device}")
@@ -116,6 +124,7 @@ def main(args: argparse.Namespace) -> None:
         model_id = cfg.model.model_id
         logger.info(f"Loading base model '{model_id}' with auto optimization...")
 
+        attention_impl = "flash_attention_2"
         try:
             model = AutoModelForCausalLM.from_pretrained(
                 model_id,
@@ -128,6 +137,7 @@ def main(args: argparse.Namespace) -> None:
             logger.warning(
                 f"FlashAttention2 not available ({str(flash_error)}), falling back to eager attention"
             )
+            attention_impl = "eager"
             model = AutoModelForCausalLM.from_pretrained(
                 model_id,
                 device_map="auto",
@@ -139,6 +149,18 @@ def main(args: argparse.Namespace) -> None:
         tokenizer = AutoTokenizer.from_pretrained(model_id, use_fast=True)
         tokenizer = TokenizerUtils.setup_tokenizer(tokenizer)
 
+        generation_params = {
+            "max_new_tokens": args.max_new_tokens,
+            "temperature": args.temperature,
+            "top_p": args.top_p,
+        }
+
+        model_config = {
+            "model_id": model_id,
+            "device": str(device),
+            "attention_implementation": attention_impl,
+        }
+
         logger.info(
             f"Generation parameters: max_tokens={args.max_new_tokens}, "
             f"temperature={args.temperature}, top_p={args.top_p}"
@@ -148,19 +170,30 @@ def main(args: argparse.Namespace) -> None:
         print(f"Prompt:\n{args.prompt}\n")
         logger.info(f"Processing prompt (length: {len(args.prompt)} chars)")
 
+        start_time = time.time()
         response = generate(
-            model=model,
-            tokenizer=tokenizer,
-            prompt=args.prompt,
-            max_new_tokens=args.max_new_tokens,
-            temperature=args.temperature,
-            top_p=args.top_p,
+            model=model, tokenizer=tokenizer, prompt=args.prompt, **generation_params
         )
+        execution_time = time.time() - start_time
 
         print("Response:")
         print(response)
         print("-" * 50)
 
+        inference_logger.log_inference(
+            prompt=args.prompt,
+            response=response,
+            model_config=model_config,
+            generation_params=generation_params,
+            execution_time=execution_time,
+            model_type="baseline",
+        )
+
+        session_file = inference_logger.save_session()
+        comparison_file = inference_logger.export_comparison_data()
+
+        logger.info(f"Inference results saved to: {session_file}")
+        logger.info(f"Comparison data saved to: {comparison_file}")
         logger.info("Baseline inference completed successfully")
 
     except Exception as e:

@@ -5,7 +5,7 @@ import tempfile
 import os
 import sys
 from pathlib import Path
-from src.llama_lora.utils.common import PathManager
+from src.llama_lora.utils.storage import PathManager
 
 
 class TestPathManager:
