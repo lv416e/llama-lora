@@ -5,12 +5,12 @@ for validation and Hydra for flexible configuration management. All settings
 are organized into logical groups for better maintainability and validation.
 """
 
+from dataclasses import dataclass, field
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field, model_validator
 from hydra.core.config_store import ConfigStore
 from hydra.core.hydra_config import HydraConfig
-from dataclasses import dataclass, field
+from pydantic import BaseModel, Field, model_validator
 
 
 # Hydra互換性のためのdataclassベース設定
@@ -76,7 +76,7 @@ class HydraLoggingConfig:
 
 
 @dataclass
-class HydraConfig:
+class HydraConfig:  # noqa
     """Hydra互換のmain configuration class (dataclass based)."""
 
     model: HydraModelConfig = field(default_factory=HydraModelConfig)
