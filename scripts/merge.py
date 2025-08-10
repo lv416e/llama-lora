@@ -1,59 +1,112 @@
+"""Model merging script for PEFT adapters.
 
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
-from peft import PeftModel
+This script merges LoRA/DoRA adapter weights with the base model to create
+a standalone model that can be used without PEFT. The merged model includes
+both the base model parameters and the learned adapter weights.
+"""
+
 import os
 import warnings
 
-# Import configuration
+import torch
+from peft import PeftModel
+from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedTokenizer
+
 import config
 
-# Suppress warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
-def main():
-    # --- Device Setup ---
-    # Merging can be done on the CPU
-    device = "cpu"
-    print(f"Using device: {device}")
-
-    # --- Model and Tokenizer Loading ---
-    # Check if adapter directory exists
-    if not os.path.isdir(config.ADAPTER_DIR):
-        print(f"Error: Adapter directory not found at '{config.ADAPTER_DIR}'")
+def _validate_adapter_directory(adapter_dir: str) -> None:
+    """Validate that the adapter directory exists.
+    
+    Args:
+        adapter_dir: Path to the adapter directory.
+        
+    Raises:
+        SystemExit: If adapter directory does not exist.
+    """
+    if not os.path.isdir(adapter_dir):
+        print(f"Error: Adapter directory not found at '{adapter_dir}'")
         print("Please run train.py to create an adapter first.")
-        return
+        exit(1)
 
-    print(f"Loading base model '{config.MODEL_ID}'...")
-    base_model = AutoModelForCausalLM.from_pretrained(config.MODEL_ID)
 
-    print(f"Loading PEFT adapter from '{config.ADAPTER_DIR}'...")
-    peft_model = PeftModel.from_pretrained(base_model, config.ADAPTER_DIR)
+def _load_and_merge_model(model_id: str, adapter_dir: str, device: str) -> AutoModelForCausalLM:
+    """Load base model, attach PEFT adapter, and merge weights.
+    
+    Args:
+        model_id: Base model identifier.
+        adapter_dir: Path to the PEFT adapter.
+        device: Target device for computation.
+        
+    Returns:
+        Merged model with adapter weights integrated.
+    """
+    print(f"Loading base model '{model_id}'...")
+    base_model = AutoModelForCausalLM.from_pretrained(model_id)
+
+    print(f"Loading PEFT adapter from '{adapter_dir}'...")
+    peft_model = PeftModel.from_pretrained(base_model, adapter_dir)
     peft_model = peft_model.to(device)
 
-    # --- Merge and Unload ---
     print("Merging adapter weights into the base model...")
     merged_model = peft_model.merge_and_unload()
     print("Merge complete.")
+    
+    return merged_model
 
-    # --- Save Merged Model and Tokenizer ---
+
+def _save_tokenizer(tokenizer_dir: str, model_id: str, output_dir: str) -> None:
+    """Load and save tokenizer to the output directory.
+    
+    Args:
+        tokenizer_dir: Path to saved tokenizer directory.
+        model_id: Base model ID to use as fallback.
+        output_dir: Directory to save the tokenizer.
+    """
+    tokenizer_path = tokenizer_dir if os.path.isdir(tokenizer_dir) else model_id
+    print(f"Loading tokenizer from '{tokenizer_path}'...")
+    
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, use_fast=True)
+    tokenizer.save_pretrained(output_dir)
+
+
+def main() -> None:
+    """Main function for merging PEFT adapter with base model.
+    
+    This function performs the complete merging workflow:
+    - Validates adapter directory exists
+    - Loads base model and PEFT adapter
+    - Merges adapter weights into base model
+    - Saves merged model and tokenizer
+    
+    The resulting merged model can be used as a standard HuggingFace model
+    without requiring PEFT library.
+    """
+    device = "cpu"
+    print(f"Using device: {device}")
+
+    _validate_adapter_directory(config.ADAPTER_DIR)
+
+    merged_model = _load_and_merge_model(
+        model_id=config.MODEL_ID,
+        adapter_dir=config.ADAPTER_DIR,
+        device=device
+    )
+
     os.makedirs(config.MERGED_DIR, exist_ok=True)
 
     print(f"Saving merged model to '{config.MERGED_DIR}'...")
     merged_model.save_pretrained(config.MERGED_DIR)
 
-    # --- Tokenizer Loading and Saving ---
-    tokenizer_path = (
-        config.TOKENIZER_DIR if os.path.isdir(config.TOKENIZER_DIR) else config.MODEL_ID
+    _save_tokenizer(
+        tokenizer_dir=config.TOKENIZER_DIR,
+        model_id=config.MODEL_ID,
+        output_dir=config.MERGED_DIR
     )
-    print(
-        f"Loading tokenizer from '{tokenizer_path}' to save alongside merged model..."
-    )
-    tok = AutoTokenizer.from_pretrained(tokenizer_path, use_fast=True)
-    tok.save_pretrained(config.MERGED_DIR)
 
     print(f"\nMerged model and tokenizer saved to: {config.MERGED_DIR}")
-    print("You can now use this directory as a standard Hugging Face model.")
+    print("You can now use this directory as a standard HuggingFace model.")
 
 
 if __name__ == "__main__":

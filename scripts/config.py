@@ -1,48 +1,85 @@
-# --- Constants --- #
+"""Configuration constants for LLaMA-LoRA fine-tuning pipeline.
 
-# Base model for fine-tuning
-MODEL_ID = "meta-llama/Llama-3.2-1B-Instruct"
+This module contains all configuration parameters for model training, PEFT setup,
+and output management. All constants are centralized here for easy modification
+and consistency across the training workflow.
+"""
 
-# Dataset settings
-DATASET_ID = "tatsu-lab/alpaca"
-DATASET_SPLIT = "train[:1%]"  # Use a small portion for quick testing
+from typing import List
 
-# Fine-tuning method
-USE_DORA = True
+MODEL_ID: str = "meta-llama/Llama-3.2-1B-Instruct"
+"""Base model identifier for fine-tuning."""
 
-# Training parameters
-SEQ_LEN = 1024
-LR = 2e-5
-BATCH = 1
-ACCUM = 8  # Gradient accumulation steps
-EPOCHS = 1
+DATASET_ID: str = "tatsu-lab/alpaca"
+"""Dataset identifier from HuggingFace Hub."""
 
-# PEFT/LoRA configuration
-PEFT_R = 16
-PEFT_LORA_ALPHA = 32
-PEFT_LORA_DROPOUT = 0.05
-PEFT_TARGET_MODULES = [
+DATASET_SPLIT: str = "train[:1%]"
+"""Dataset split specification for training."""
+
+USE_DORA: bool = True
+"""Enable Weight-Decomposed Low-Rank Adaptation (DoRA)."""
+
+SEQ_LEN: int = 1024
+"""Maximum sequence length for tokenization."""
+
+LR: float = 2e-5
+"""Learning rate for training."""
+
+BATCH: int = 1
+"""Per-device training batch size."""
+
+ACCUM: int = 8
+"""Gradient accumulation steps."""
+
+EPOCHS: int = 1
+"""Number of training epochs."""
+
+PEFT_R: int = 16
+"""LoRA rank parameter."""
+
+PEFT_LORA_ALPHA: int = 32
+"""LoRA alpha parameter for scaling."""
+
+PEFT_LORA_DROPOUT: float = 0.05
+"""Dropout rate for LoRA layers."""
+
+PEFT_TARGET_MODULES: List[str] = [
     "q_proj",
-    "k_proj",
+    "k_proj", 
     "v_proj",
     "o_proj",
     "gate_proj",
     "up_proj",
     "down_proj",
 ]
+"""Target modules for LoRA/DoRA application."""
 
-# Output directories
-BASE_OUTPUT_DIR = "./out-llama-lora"
-ADAPTER_DIR = f"{BASE_OUTPUT_DIR}/adapter"
-MERGED_DIR = f"{BASE_OUTPUT_DIR}/merged"
-TOKENIZER_DIR = f"{BASE_OUTPUT_DIR}/tokenizer"
+BASE_OUTPUT_DIR: str = "./out-llama-lora"
+"""Base output directory for all artifacts."""
 
-# Logging/Reporting
-REPORT_TO = "tensorboard"  # or "none", "wandb"
-LOG_DIR = f"{BASE_OUTPUT_DIR}/runs"
+ADAPTER_DIR: str = f"{BASE_OUTPUT_DIR}/adapter"
+"""Directory for saving LoRA/DoRA adapter weights."""
 
-# Reproducibility & training control (used if present)
-SEED = 42
-VAL_RATIO = 0.1
-EVAL_STEPS = 200
-ES_PATIENCE = 3
+MERGED_DIR: str = f"{BASE_OUTPUT_DIR}/merged"
+"""Directory for saving merged model."""
+
+TOKENIZER_DIR: str = f"{BASE_OUTPUT_DIR}/tokenizer"
+"""Directory for saving tokenizer."""
+
+REPORT_TO: str = "tensorboard"
+"""Experiment tracking backend."""
+
+LOG_DIR: str = f"{BASE_OUTPUT_DIR}/runs"
+"""Directory for training logs."""
+
+SEED: int = 42
+"""Random seed for reproducibility."""
+
+VAL_RATIO: float = 0.1
+"""Validation set ratio."""
+
+EVAL_STEPS: int = 200
+"""Number of steps between evaluations."""
+
+ES_PATIENCE: int = 3
+"""Early stopping patience."""
