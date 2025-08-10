@@ -52,6 +52,16 @@ To create a standalone model, you can merge the adapter weights into the base mo
 python scripts/merge.py
 ```
 
+### TensorBoard (Logging)
+
+Training logs are recorded to `out-llama-lora/runs`.
+
+View them with:
+
+```bash
+uv run tensorboard --logdir out-llama-lora/runs
+```
+
 ## Important: Gated Model Access
 
 This project uses `meta-llama/Llama-3.2-1B-Instruct`, which is a gated model on the Hugging Face Hub. To run the scripts, you must:
