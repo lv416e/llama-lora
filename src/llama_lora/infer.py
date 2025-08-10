@@ -62,7 +62,7 @@ def validate_adapter_directory(adapter_dir: str) -> None:
     Raises:
         AdapterError: If adapter directory does not exist.
     """
-    if not PathManager.directory_exists(adapter_dir):
+    if not os.path.isdir(adapter_dir):
         error_msg = (
             f"Adapter directory not found at '{adapter_dir}'. "
             "Please run a training script to create an adapter first."
