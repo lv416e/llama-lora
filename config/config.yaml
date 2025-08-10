@@ -1,4 +1,5 @@
 defaults:
+  - inference: latest
   - _self_
 
 # Minimal configuration - use experiment configs for full functionality

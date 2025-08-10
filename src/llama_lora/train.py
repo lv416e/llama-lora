@@ -26,10 +26,10 @@ from .utils.common import (
     DeviceManager,
     SeedManager,
     TokenizerUtils,
-    PathManager,
     setup_logging,
     get_optimal_num_processes,
 )
+from .utils.storage import PathManager
 from .utils.exceptions import (
     ModelLoadingError,
     DatasetError,
@@ -308,9 +308,18 @@ def main(cfg: DictConfig) -> None:
     try:
         validate_and_log_config(cfg)
 
-        from config.schema import save_experiment_metadata
+        from config.schema import save_experiment_metadata, HydraConfig
 
-        pydantic_cfg = cfg.to_pydantic_config()
+        # Convert to HydraConfig first, then to Pydantic
+        hydra_config = HydraConfig(
+            model=cfg.model,
+            dataset=cfg.dataset,
+            training=cfg.training,
+            peft=cfg.peft,
+            output=cfg.output,
+            logging=cfg.logging,
+        )
+        pydantic_cfg = hydra_config.to_pydantic_config()
         output_config = pydantic_cfg.output
 
         logger.info("Using structured output paths:")

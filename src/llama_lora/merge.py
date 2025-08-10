@@ -178,10 +178,19 @@ def main(cfg: DictConfig) -> None:
     try:
         logger.info("Starting model merging process...")
 
-        from config.schema import save_experiment_metadata
+        from config.schema import save_experiment_metadata, HydraConfig
         from omegaconf import OmegaConf
 
-        pydantic_cfg = cfg.to_pydantic_config()
+        # Convert to HydraConfig first, then to Pydantic
+        hydra_config = HydraConfig(
+            model=cfg.model,
+            dataset=cfg.dataset,
+            training=cfg.training,
+            peft=cfg.peft,
+            output=cfg.output,
+            logging=cfg.logging,
+        )
+        pydantic_cfg = hydra_config.to_pydantic_config()
         output_config = pydantic_cfg.output
 
         device = "cpu"

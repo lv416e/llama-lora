@@ -72,40 +72,51 @@ class HydraOutputConfig:
     metadata_dir: str = ""
 
     def __post_init__(self) -> None:
+        # Only generate run_id if we're in training mode (not inference)
+        # Inference should use existing run_ids or auto-discovery
         if not self.run_id:
-            from llama_lora.utils.common import (
-                generate_unique_run_id,
-                validate_run_id_uniqueness,
-            )
-
-            self.run_id = generate_unique_run_id()
-
-            # Validate uniqueness and retry if needed
-            max_attempts = 5
-            for _ in range(max_attempts):
-                if validate_run_id_uniqueness(
-                    self.run_id, self.base_output_dir, self.experiment_name
-                ):
-                    break
-                self.run_id = generate_unique_run_id()
-            else:
-                raise RuntimeError(
-                    f"Failed to generate unique run_id after {max_attempts} attempts"
+            import os
+            # Check if we're in inference mode by looking at the calling script
+            import sys
+            script_name = os.path.basename(sys.argv[0]) if sys.argv else ""
+            
+            # Don't auto-generate run_id for inference scripts
+            if "infer" not in script_name.lower():
+                from llama_lora.utils.common import (
+                    generate_unique_run_id,
+                    validate_run_id_uniqueness,
                 )
 
-        experiment_base = f"{self.base_output_dir}/experiments/{self.experiment_name}"
-        run_base = f"{experiment_base}/runs/{self.run_id}"
+                self.run_id = generate_unique_run_id()
 
-        if not self.adapter_dir:
-            self.adapter_dir = f"{run_base}/artifacts/adapter"
-        if not self.tokenizer_dir:
-            self.tokenizer_dir = f"{run_base}/artifacts/tokenizer"
-        if not self.merged_dir:
-            self.merged_dir = f"{run_base}/artifacts/merged"
-        if not self.log_dir:
-            self.log_dir = f"{run_base}/logs"
-        if not self.metadata_dir:
-            self.metadata_dir = f"{run_base}/metadata"
+                # Validate uniqueness and retry if needed
+                max_attempts = 5
+                for _ in range(max_attempts):
+                    if validate_run_id_uniqueness(
+                        self.run_id, self.base_output_dir, self.experiment_name
+                    ):
+                        break
+                    self.run_id = generate_unique_run_id()
+                else:
+                    raise RuntimeError(
+                        f"Failed to generate unique run_id after {max_attempts} attempts"
+                    )
+
+        # Only set paths if run_id is available
+        if self.run_id:
+            experiment_base = f"{self.base_output_dir}/experiments/{self.experiment_name}"
+            run_base = f"{experiment_base}/runs/{self.run_id}"
+
+            if not self.adapter_dir:
+                self.adapter_dir = f"{run_base}/artifacts/adapter"
+            if not self.tokenizer_dir:
+                self.tokenizer_dir = f"{run_base}/artifacts/tokenizer"
+            if not self.merged_dir:
+                self.merged_dir = f"{run_base}/artifacts/merged"
+            if not self.log_dir:
+                self.log_dir = f"{run_base}/logs"
+            if not self.metadata_dir:
+                self.metadata_dir = f"{run_base}/metadata"
 
 
 def save_experiment_metadata(
@@ -218,6 +229,19 @@ class HydraLoggingConfig:
     report_to: str = "tensorboard"
     project_name: Optional[str] = None
 
+@dataclass
+class HydraInferenceConfig:
+    auto_find_latest_run: bool = True
+    fallback_run_id: Optional[str] = None
+    run_id: Optional[str] = None
+    adapter_dir: Optional[str] = None
+    tokenizer_dir: Optional[str] = None
+    
+    # Generation parameters
+    max_new_tokens: int = 128
+    temperature: float = 0.7
+    top_p: float = 0.9
+
 
 @dataclass
 class HydraConfig:  # noqa
@@ -229,6 +253,7 @@ class HydraConfig:  # noqa
     peft: HydraPEFTConfig = field(default_factory=HydraPEFTConfig)
     output: HydraOutputConfig = field(default_factory=HydraOutputConfig)
     logging: HydraLoggingConfig = field(default_factory=HydraLoggingConfig)
+    inference: HydraInferenceConfig = field(default_factory=HydraInferenceConfig)
 
     def __post_init__(self) -> None:
         if self.peft.target_modules is None:
@@ -265,16 +290,26 @@ class HydraConfig:  # noqa
             output=OutputConfig(
                 base_output_dir=self.output.base_output_dir,
                 experiment_name=self.output.experiment_name,
-                run_id="",  # Let OutputConfig generate this automatically
-                adapter_dir="",  # Let OutputConfig generate this automatically
-                tokenizer_dir="",  # Let OutputConfig generate this automatically
-                merged_dir="",  # Let OutputConfig generate this automatically
-                log_dir="",  # Let OutputConfig generate this automatically
-                metadata_dir="",  # Let OutputConfig generate this automatically
+                run_id=getattr(self.output, 'run_id', ''),
+                adapter_dir=getattr(self.output, 'adapter_dir', ''),
+                tokenizer_dir=getattr(self.output, 'tokenizer_dir', ''),
+                merged_dir=getattr(self.output, 'merged_dir', ''),
+                log_dir=getattr(self.output, 'log_dir', ''),
+                metadata_dir=getattr(self.output, 'metadata_dir', ''),
             ),
             logging=LoggingConfig(
                 report_to=self.logging.report_to,
                 project_name=self.logging.project_name,
+            ),
+            inference=InferenceConfig(
+                auto_find_latest_run=getattr(self.inference, 'auto_find_latest_run', True),
+                fallback_run_id=getattr(self.inference, 'fallback_run_id', None),
+                run_id=getattr(self.inference, 'run_id', None),
+                adapter_dir=getattr(self.inference, 'adapter_dir', None),
+                tokenizer_dir=getattr(self.inference, 'tokenizer_dir', None),
+                max_new_tokens=getattr(self.inference, 'max_new_tokens', 128),
+                temperature=getattr(self.inference, 'temperature', 0.7),
+                top_p=getattr(self.inference, 'top_p', 0.9),
             ),
         )
 
@@ -359,40 +394,49 @@ class OutputConfig(BaseModel):
     metadata_dir: str = Field(default="", description="Metadata output directory")
 
     def model_post_init(self, __context) -> None:
+        # Only generate run_id if we're in training mode (not inference)
         if not self.run_id:
-            from llama_lora.utils.common import (
-                generate_unique_run_id,
-                validate_run_id_uniqueness,
-            )
-
-            self.run_id = generate_unique_run_id()
-
-            # Validate uniqueness and retry if needed
-            max_attempts = 5
-            for _ in range(max_attempts):
-                if validate_run_id_uniqueness(
-                    self.run_id, self.base_output_dir, self.experiment_name
-                ):
-                    break
-                self.run_id = generate_unique_run_id()
-            else:
-                raise RuntimeError(
-                    f"Failed to generate unique run_id after {max_attempts} attempts"
+            import os
+            import sys
+            script_name = os.path.basename(sys.argv[0]) if sys.argv else ""
+            
+            # Don't auto-generate run_id for inference scripts
+            if "infer" not in script_name.lower():
+                from llama_lora.utils.common import (
+                    generate_unique_run_id,
+                    validate_run_id_uniqueness,
                 )
 
-        experiment_base = f"{self.base_output_dir}/experiments/{self.experiment_name}"
-        run_base = f"{experiment_base}/runs/{self.run_id}"
+                self.run_id = generate_unique_run_id()
 
-        if not self.adapter_dir:
-            self.adapter_dir = f"{run_base}/artifacts/adapter"
-        if not self.tokenizer_dir:
-            self.tokenizer_dir = f"{run_base}/artifacts/tokenizer"
-        if not self.merged_dir:
-            self.merged_dir = f"{run_base}/artifacts/merged"
-        if not self.log_dir:
-            self.log_dir = f"{run_base}/logs"
-        if not self.metadata_dir:
-            self.metadata_dir = f"{run_base}/metadata"
+                # Validate uniqueness and retry if needed
+                max_attempts = 5
+                for _ in range(max_attempts):
+                    if validate_run_id_uniqueness(
+                        self.run_id, self.base_output_dir, self.experiment_name
+                    ):
+                        break
+                    self.run_id = generate_unique_run_id()
+                else:
+                    raise RuntimeError(
+                        f"Failed to generate unique run_id after {max_attempts} attempts"
+                    )
+
+        # Only set paths if run_id is available
+        if self.run_id:
+            experiment_base = f"{self.base_output_dir}/experiments/{self.experiment_name}"
+            run_base = f"{experiment_base}/runs/{self.run_id}"
+
+            if not self.adapter_dir:
+                self.adapter_dir = f"{run_base}/artifacts/adapter"
+            if not self.tokenizer_dir:
+                self.tokenizer_dir = f"{run_base}/artifacts/tokenizer"
+            if not self.merged_dir:
+                self.merged_dir = f"{run_base}/artifacts/merged"
+            if not self.log_dir:
+                self.log_dir = f"{run_base}/logs"
+            if not self.metadata_dir:
+                self.metadata_dir = f"{run_base}/metadata"
 
 
 class CleanupPolicy(BaseModel):
@@ -420,6 +464,36 @@ class LoggingConfig(BaseModel):
         default=None, description="Experiment or project name for logging"
     )
 
+class InferenceConfig(BaseModel):
+    """Inference configuration with validation."""
+
+    auto_find_latest_run: bool = Field(
+        default=True, description="Automatically find the latest training run"
+    )
+    fallback_run_id: Optional[str] = Field(
+        default=None, description="Fallback run ID if auto-discovery fails"
+    )
+    run_id: Optional[str] = Field(
+        default=None, description="Specific run ID to use for inference"
+    )
+    adapter_dir: Optional[str] = Field(
+        default=None, description="Direct path to adapter directory"
+    )
+    tokenizer_dir: Optional[str] = Field(
+        default=None, description="Direct path to tokenizer directory"
+    )
+    
+    # Generation parameters
+    max_new_tokens: int = Field(
+        default=128, ge=1, le=2048, description="Maximum number of tokens to generate"
+    )
+    temperature: float = Field(
+        default=0.7, ge=0.0, le=2.0, description="Sampling temperature"
+    )
+    top_p: float = Field(
+        default=0.9, ge=0.0, le=1.0, description="Nucleus sampling parameter"
+    )
+
 
 class Config(BaseModel):
     """Main configuration class using Pydantic for unified validation."""
@@ -430,6 +504,7 @@ class Config(BaseModel):
     peft: PEFTConfig = Field(default_factory=PEFTConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
+    inference: InferenceConfig = Field(default_factory=InferenceConfig)
     cleanup: CleanupPolicy = Field(default_factory=CleanupPolicy)
 
     model_config = {"validate_assignment": True}
@@ -482,3 +557,8 @@ cs.store(group="training", name="standard", node=HydraTrainingConfig(epochs=3, l
 
 cs.store(group="peft", name="lora_16", node=HydraPEFTConfig(r=16, lora_alpha=32))
 cs.store(group="peft", name="lora_32", node=HydraPEFTConfig(r=32, lora_alpha=64))
+
+# Inference configurations
+cs.store(group="inference", name="base", node=HydraInferenceConfig())
+cs.store(group="inference", name="latest", node=HydraInferenceConfig(auto_find_latest_run=True))
+cs.store(group="inference", name="manual", node=HydraInferenceConfig(auto_find_latest_run=False))

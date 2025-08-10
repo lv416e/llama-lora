@@ -189,25 +189,81 @@ def generate_response(
 
 
 def main(args: argparse.Namespace) -> None:
-    """Main inference function with result logging."""
+    """Main inference function with enhanced configuration support."""
     import time
     from llama_lora.utils.results import InferenceLogger
+    from .utils.storage import InferencePathResolver
 
     try:
-        logger.info("Starting inference process with result logging")
+        logger.info("Starting inference process with enhanced configuration")
+
+        # Build Hydra overrides from command-line arguments
+        overrides = []
+        
+        # Handle backward compatibility for run_id and adapter_dir
+        if args.run_id:
+            overrides.append(f"inference.run_id={args.run_id}")
+        if args.adapter_dir:
+            overrides.append(f"inference.adapter_dir={args.adapter_dir}")
+            overrides.append(f"inference.tokenizer_dir={args.adapter_dir}")
+            
+        # Override generation parameters from command line
+        overrides.append(f"inference.max_new_tokens={args.max_new_tokens}")
+        overrides.append(f"inference.temperature={args.temperature}")
+        overrides.append(f"inference.top_p={args.top_p}")
 
         with hydra.initialize(version_base=None, config_path="../../config"):
-            cfg = hydra.compose(config_name="config")
+            cfg = hydra.compose(config_name="config", overrides=overrides)
 
-        pydantic_cfg = cfg.to_pydantic_config()
+        from config.schema import HydraConfig
+
+        # Convert to HydraConfig first, then to Pydantic
+        hydra_config = HydraConfig(
+            model=cfg.model,
+            dataset=cfg.dataset,
+            training=cfg.training,
+            peft=cfg.peft,
+            output=cfg.output,
+            logging=cfg.logging,
+            inference=getattr(cfg, 'inference', None) or HydraConfig().inference,
+        )
+        pydantic_cfg = hydra_config.to_pydantic_config()
         output_config = pydantic_cfg.output
+        inference_config = pydantic_cfg.inference
+
+        # Use new path resolution system
+        resolved_paths = InferencePathResolver.resolve_paths(
+            output_config, inference_config
+        )
+        
+        # Update output_config with resolved paths
+        output_config.adapter_dir = resolved_paths["adapter_dir"]
+        output_config.tokenizer_dir = resolved_paths["tokenizer_dir"]
+        
+        # Set correct run_id and metadata_dir for inference logging
+        if "discovered_run_id" in resolved_paths:
+            discovered_run_id = resolved_paths["discovered_run_id"]
+            output_config.run_id = discovered_run_id
+            # Set correct metadata_dir based on discovered run_id
+            experiment_base = f"{output_config.base_output_dir}/experiments/{output_config.experiment_name}"
+            run_base = f"{experiment_base}/runs/{discovered_run_id}"
+            output_config.metadata_dir = f"{run_base}/metadata"
+            logger.info(f"Auto-discovered latest run: {discovered_run_id}")
+        elif "used_fallback" in resolved_paths:
+            logger.info("Used fallback run_id configuration")
+        elif inference_config.run_id:
+            # If specific run_id was provided via inference config
+            output_config.run_id = inference_config.run_id
+            experiment_base = f"{output_config.base_output_dir}/experiments/{output_config.experiment_name}"
+            run_base = f"{experiment_base}/runs/{inference_config.run_id}"
+            output_config.metadata_dir = f"{run_base}/metadata"
 
         inference_logger = InferenceLogger(output_config, "fine_tuned")
 
         device = DeviceManager.detect_device()
         logger.info(f"Using device: {device}")
 
-        logger.info("Using structured paths:")
+        logger.info("Using resolved paths:")
         logger.info(f"  Adapter: {output_config.adapter_dir}")
         logger.info(f"  Tokenizer: {output_config.tokenizer_dir}")
 
@@ -219,10 +275,11 @@ def main(args: argparse.Namespace) -> None:
             output_config.tokenizer_dir, cfg.model.model_id
         )
 
+        # Use generation parameters from inference config
         generation_params = {
-            "max_new_tokens": args.max_new_tokens,
-            "temperature": args.temperature,
-            "top_p": args.top_p,
+            "max_new_tokens": inference_config.max_new_tokens,
+            "temperature": inference_config.temperature,
+            "top_p": inference_config.top_p,
         }
 
         model_config = {
@@ -233,8 +290,8 @@ def main(args: argparse.Namespace) -> None:
         }
 
         logger.info(
-            f"Generation parameters: max_tokens={args.max_new_tokens}, "
-            f"temperature={args.temperature}, top_p={args.top_p}"
+            f"Generation parameters: max_tokens={inference_config.max_new_tokens}, "
+            f"temperature={inference_config.temperature}, top_p={inference_config.top_p}"
         )
 
         print("-" * 50)
@@ -266,10 +323,17 @@ def main(args: argparse.Namespace) -> None:
 
         session_file = inference_logger.save_session()
         comparison_file = inference_logger.export_comparison_data()
-
-        logger.info(f"Inference results saved to: {session_file}")
-        logger.info(f"Comparison data saved to: {comparison_file}")
-        logger.info("Inference completed successfully")
+        
+        # Log session information with new session-based structure
+        session_info = inference_logger.get_session_info()
+        
+        logger.info(f"Session completed successfully")
+        logger.info(f"  Session ID: {session_info['session_id']}")
+        logger.info(f"  Session directory: {session_info['session_dir']}")
+        logger.info(f"  Total inferences: {session_info['inference_count']}")
+        logger.info(f"  Session summary: {session_file}")
+        logger.info(f"  Legacy comparison: {comparison_file}")
+        logger.info("Inference session saved with session accumulation (MLOps industry standard)")
 
     except Exception as e:
         logger.error(f"Inference failed: {str(e)}", exc_info=True)
@@ -278,7 +342,24 @@ def main(args: argparse.Namespace) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Run inference with a fine-tuned PEFT model using Hydra configuration.",
+        description="""Run inference with a fine-tuned PEFT model using Hydra configuration.
+
+Enhanced Usage Patterns:
+  # Auto-discover latest run (default behavior):
+  python -m llama_lora.infer "your prompt"
+  
+  # Use specific inference config:
+  python -m llama_lora.infer "your prompt" inference=manual
+  
+  # Use experiment configuration:
+  python -m llama_lora.infer "your prompt" +experiment=my_inference
+  
+  # Override specific settings:
+  python -m llama_lora.infer "your prompt" inference.run_id=20250811_072332
+  
+  # Backward compatibility (legacy args still work):
+  python -m llama_lora.infer "your prompt" --run_id 20250811_072332 --max_new_tokens 256
+        """,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("prompt", type=str, help="Input text prompt for generation.")
@@ -286,19 +367,36 @@ if __name__ == "__main__":
         "--max_new_tokens",
         type=int,
         default=128,
-        help="Maximum number of new tokens to generate (default: 128).",
+        help="Maximum number of new tokens to generate (default: 128). "
+             "Overrides inference config if specified.",
     )
     parser.add_argument(
         "--temperature",
         type=float,
         default=0.7,
-        help="Sampling temperature (0.0-2.0, higher = more random, default: 0.7).",
+        help="Sampling temperature (0.0-2.0, higher = more random, default: 0.7). "
+             "Overrides inference config if specified.",
     )
     parser.add_argument(
         "--top_p",
         type=float,
         default=0.9,
-        help="Nucleus sampling parameter (0.0-1.0, default: 0.9).",
+        help="Nucleus sampling parameter (0.0-1.0, default: 0.9). "
+             "Overrides inference config if specified.",
+    )
+    parser.add_argument(
+        "--run_id",
+        type=str,
+        default="",
+        help="[LEGACY] Specific run ID to use for inference. "
+             "Prefer using 'inference.run_id=VALUE' in Hydra overrides.",
+    )
+    parser.add_argument(
+        "--adapter_dir",
+        type=str,
+        default="",
+        help="[LEGACY] Direct path to adapter directory. "
+             "Prefer using 'inference.adapter_dir=PATH' in Hydra overrides.",
     )
 
     cli_args = parser.parse_args()

@@ -113,7 +113,18 @@ def main(args: argparse.Namespace) -> None:
         with hydra.initialize(version_base=None, config_path="../../config"):
             cfg = hydra.compose(config_name="config")
 
-        pydantic_cfg = cfg.to_pydantic_config()
+        from config.schema import HydraConfig
+
+        # Convert to HydraConfig first, then to Pydantic
+        hydra_config = HydraConfig(
+            model=cfg.model,
+            dataset=cfg.dataset,
+            training=cfg.training,
+            peft=cfg.peft,
+            output=cfg.output,
+            logging=cfg.logging,
+        )
+        pydantic_cfg = hydra_config.to_pydantic_config()
         output_config = pydantic_cfg.output
 
         inference_logger = InferenceLogger(output_config, "baseline")
