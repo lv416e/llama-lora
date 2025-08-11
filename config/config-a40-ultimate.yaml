@@ -22,6 +22,7 @@ training:
   epochs: 2  # Minimum for quality
   seed: 42
   eval_steps: 400  # Large value for epoch-based override
+  early_stopping_patience: 2  # Quick stopping for speed
 
 peft:
   r: 16  # Keep 16 for quality balance
