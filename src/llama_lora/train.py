@@ -33,7 +33,6 @@ from .utils.storage import PathManager
 from .utils.exceptions import (
     ModelLoadingError,
     DatasetError,
-    TrainingError,
     ConfigurationError,
 )
 
@@ -177,34 +176,69 @@ def load_and_setup_model(cfg: DictConfig) -> Any:
     """
     try:
         logger.info(
-            f"Loading base model '{cfg.model.model_id}' with auto optimization..."
+            f"Loading base model '{cfg.model.model_id}' with ultimate optimization..."
         )
 
-        try:
-            model = AutoModelForCausalLM.from_pretrained(
-                cfg.model.model_id,
-                device_map="auto",
-                torch_dtype="auto",
-                attn_implementation="flash_attention_2",
-                trust_remote_code=True,
-            )
-        except ImportError:
-            logger.warning(
-                "FlashAttention2 not available, falling back to eager attention"
-            )
-            model = AutoModelForCausalLM.from_pretrained(
-                cfg.model.model_id,
-                device_map="auto",
-                torch_dtype="auto",
-                attn_implementation="eager",
-                trust_remote_code=True,
-            )
+        # ① SDPA + TF32最適化を起動時強制（public docs準拠）
+        import torch
+
+        torch.set_float32_matmul_precision("high")  # TF32を許可
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+        logger.info("TF32/CUDA optimizations enabled")
+
+        # QLoRA対応：量子化設定
+        quantization_config = None
+        if hasattr(cfg, "quantization"):
+            try:
+                from transformers import BitsAndBytesConfig
+
+                if getattr(cfg.quantization, "load_in_4bit", False):
+                    quantization_config = BitsAndBytesConfig(
+                        load_in_4bit=True,
+                        bnb_4bit_quant_type=getattr(
+                            cfg.quantization, "bnb_4bit_quant_type", "nf4"
+                        ),
+                        bnb_4bit_compute_dtype=getattr(
+                            cfg.quantization, "bnb_4bit_compute_dtype", "bfloat16"
+                        ),
+                        bnb_4bit_use_double_quant=getattr(
+                            cfg.quantization, "bnb_4bit_use_double_quant", True
+                        ),
+                    )
+                    logger.info("4-bit QLoRA quantization enabled")
+                elif getattr(cfg.quantization, "load_in_8bit", False):
+                    quantization_config = BitsAndBytesConfig(load_in_8bit=True)
+                    logger.info("8-bit quantization enabled")
+            except ImportError:
+                logger.warning("bitsandbytes not available, skipping quantization")
+
+        # モデル読み込み
+        model_kwargs = {
+            "device_map": "auto",
+            "torch_dtype": torch.float16,  # A40でTensor Core最適化
+            "attn_implementation": "sdpa",  # SDPA強制
+            "trust_remote_code": True,
+        }
+
+        if quantization_config is not None:
+            model_kwargs["quantization_config"] = quantization_config
+
+        model = AutoModelForCausalLM.from_pretrained(cfg.model.model_id, **model_kwargs)
+        logger.info("SDPA attention implementation enabled with FP16")
+
+        # QLoRA準備
+        if quantization_config is not None:
+            from peft import prepare_model_for_kbit_training
+
+            model = prepare_model_for_kbit_training(model)
+            logger.info("Model prepared for k-bit training")
 
         model.config.use_cache = False
         if hasattr(model, "gradient_checkpointing_enable"):
             model.gradient_checkpointing_enable()
 
-        logger.info("Setting up PEFT with LoRA/DoRA...")
+        logger.info("Setting up LoRA/QLoRA...")
         peft_config = LoraConfig(
             task_type=TaskType.CAUSAL_LM,
             r=cfg.peft.r,
@@ -243,51 +277,68 @@ def setup_training_arguments(
     PathManager.ensure_directory(output_config.adapter_dir)
     PathManager.ensure_directory(output_config.log_dir)
 
+    # A40 Ampere最適化：FP16優先（BF16よりTensor Core効率）
+    if device == "cuda":
+        use_fp16 = True  # A40でTensor Core最適化
+        use_bf16 = False
+
     return TrainingArguments(
         output_dir=output_config.adapter_dir,
         per_device_train_batch_size=cfg.training.batch_size,
         gradient_accumulation_steps=cfg.training.gradient_accumulation_steps,
         num_train_epochs=cfg.training.epochs,
         learning_rate=cfg.training.lr,
+        lr_scheduler_type="cosine",
+        warmup_ratio=0.03,
+        # ① Ampere最適化：FP16 + TF32
         fp16=use_fp16,
         bf16=use_bf16,
-        dataloader_pin_memory=False,
-        logging_steps=10,
+        tf32=True,  # A40のTF32を有効化
+        # ④ Fused Optimizer（8bitより高速）
+        optim="adamw_torch_fused",
+        # ⑤ DataLoader最適化（public docs準拠）
+        dataloader_pin_memory=True,
+        dataloader_num_workers=8,  # vCPUに合わせて増加
+        dataloader_prefetch_factor=4,  # prefetch追加
+        # torch.compile最適化（reduce-overhead mode）
+        torch_compile=True,
+        torch_compile_backend="inductor",
+        # メモリ管理
+        torch_empty_cache_steps=4,
+        # ② 評価・保存・ログ頻度削減
+        logging_steps=200,  # 粗めに設定
         logging_dir=output_config.log_dir,
-        save_strategy="steps",
-        save_steps=200,
-        save_total_limit=2,
-        eval_strategy="steps",
-        eval_steps=cfg.training.eval_steps,
-        load_best_model_at_end=True,
-        metric_for_best_model="eval_loss",
+        # epoch評価で最速化（EarlyStoppingCallback対応）
+        save_strategy="epoch",
+        save_total_limit=1,  # 最小限
+        eval_strategy="epoch",
+        load_best_model_at_end=True,  # EarlyStopping用に復活
+        metric_for_best_model="eval_loss",  # 必須
         greater_is_better=False,
         seed=cfg.training.seed,
         data_seed=cfg.training.seed,
         report_to=cfg.logging.report_to,
-        optim="adamw_torch",
     )
 
 
-def save_artifacts(output_config, model: Any, tokenizer: AutoTokenizer) -> None:
-    """Save trained artifacts atomically with rollback on failure."""
-    from llama_lora.utils.storage import AtomicSaver
+def save_artifacts(output_config, model, tokenizer) -> None:
+    """Save trained model artifacts with structured paths.
 
-    try:
-        logger.info("Starting atomic save of training artifacts")
+    Args:
+        output_config: Output configuration with structured paths.
+        model: Trained model.
+        tokenizer: Tokenizer.
+    """
+    logger.info("Saving model artifacts...")
 
-        with AtomicSaver(output_config.adapter_dir).atomic_operation() as saver:
-            saver.save_model_artifacts(
-                model=model,
-                tokenizer=tokenizer,
-                adapter_dir=output_config.adapter_dir,
-                tokenizer_dir=output_config.tokenizer_dir,
-            )
+    PathManager.ensure_directory(output_config.adapter_dir)
+    PathManager.ensure_directory(output_config.tokenizer_dir)
 
-        logger.info("All artifacts saved successfully")
+    model.save_pretrained(output_config.adapter_dir)
+    tokenizer.save_pretrained(output_config.tokenizer_dir)
 
-    except Exception as e:
-        raise TrainingError(f"Failed to save artifacts atomically: {str(e)}") from e
+    logger.info(f"Adapter saved to: {output_config.adapter_dir}")
+    logger.info(f"Tokenizer saved to: {output_config.tokenizer_dir}")
 
 
 @hydra.main(version_base=None, config_path="../../config", config_name="config")
@@ -371,7 +422,7 @@ def main(cfg: DictConfig) -> None:
         save_artifacts(output_config, model, tokenizer)
 
         logger.info("Training pipeline completed successfully!")
-        logger.info(f"Final configuration:\n{OmegaConf.to_yaml(cfg)}")
+        logger.info(f"Final configuration:\\n{OmegaConf.to_yaml(cfg)}")
 
     except Exception as e:
         logger.error(f"Training failed: {str(e)}", exc_info=True)

@@ -283,8 +283,10 @@ class HydraConfig:  # noqa
                 gradient_accumulation_steps=self.training.gradient_accumulation_steps,
                 epochs=self.training.epochs,
                 seed=self.training.seed,
-                eval_steps=self.training.eval_steps,
-                early_stopping_patience=self.training.early_stopping_patience,
+                eval_steps=getattr(self.training, "eval_steps", 200),
+                early_stopping_patience=getattr(
+                    self.training, "early_stopping_patience", 3
+                ),
             ),
             peft=PEFTConfig(
                 r=self.peft.r,
