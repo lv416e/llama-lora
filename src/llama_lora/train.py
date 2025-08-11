@@ -187,21 +187,54 @@ def load_and_setup_model(cfg: DictConfig) -> Any:
         torch.backends.cudnn.allow_tf32 = True
         logger.info("TF32/CUDA optimizations enabled")
 
-        # SDPA強制有効化（Flash-Attn不要）
+        # QLoRA対応：量子化設定
+        quantization_config = None
+        if hasattr(cfg, 'quantization'):
+            try:
+                from transformers import BitsAndBytesConfig
+                
+                if getattr(cfg.quantization, 'load_in_4bit', False):
+                    quantization_config = BitsAndBytesConfig(
+                        load_in_4bit=True,
+                        bnb_4bit_quant_type=getattr(cfg.quantization, 'bnb_4bit_quant_type', 'nf4'),
+                        bnb_4bit_compute_dtype=getattr(cfg.quantization, 'bnb_4bit_compute_dtype', 'bfloat16'),
+                        bnb_4bit_use_double_quant=getattr(cfg.quantization, 'bnb_4bit_use_double_quant', True),
+                    )
+                    logger.info("4-bit QLoRA quantization enabled")
+                elif getattr(cfg.quantization, 'load_in_8bit', False):
+                    quantization_config = BitsAndBytesConfig(load_in_8bit=True)
+                    logger.info("8-bit quantization enabled")
+            except ImportError:
+                logger.warning("bitsandbytes not available, skipping quantization")
+
+        # モデル読み込み
+        model_kwargs = {
+            "device_map": "auto",
+            "torch_dtype": torch.float16,  # A40でTensor Core最適化
+            "attn_implementation": "sdpa",   # SDPA強制
+            "trust_remote_code": True,
+        }
+        
+        if quantization_config is not None:
+            model_kwargs["quantization_config"] = quantization_config
+
         model = AutoModelForCausalLM.from_pretrained(
             cfg.model.model_id,
-            device_map="auto",
-            torch_dtype=torch.float16,  # A40でTensor Core最適化
-            attn_implementation="sdpa",   # SDPA強制
-            trust_remote_code=True,
+            **model_kwargs
         )
         logger.info("SDPA attention implementation enabled with FP16")
+
+        # QLoRA準備
+        if quantization_config is not None:
+            from peft import prepare_model_for_kbit_training
+            model = prepare_model_for_kbit_training(model)
+            logger.info("Model prepared for k-bit training")
 
         model.config.use_cache = False
         if hasattr(model, "gradient_checkpointing_enable"):
             model.gradient_checkpointing_enable()
 
-        logger.info("Setting up lightweight LoRA...")
+        logger.info("Setting up LoRA/QLoRA...")
         peft_config = LoraConfig(
             task_type=TaskType.CAUSAL_LM,
             r=cfg.peft.r,
@@ -218,183 +251,7 @@ def load_and_setup_model(cfg: DictConfig) -> Any:
         return model
 
     except Exception as e:
-        raise ModelLoadingError(f"Failed to load or setup model: {str(e)}") from e
-
-
-def setup_training_arguments(
-    cfg: DictConfig, output_config, device: str
-) -> TrainingArguments:
-    """Setup training arguments with proper configuration.
-
-    Args:
-        cfg: Configuration object.
-        output_config: Unified output configuration with structured paths.
-        device: Target device.
-
-    Returns:
-        Configured TrainingArguments.
-    """
-    use_fp16, use_bf16 = DeviceManager.setup_device_specific_settings(device)
-
-    # Ensure directories exist using structured paths
-    PathManager.ensure_directory(output_config.adapter_dir)
-    PathManager.ensure_directory(output_config.log_dir)
-
-    # A40 Ampere最適化：FP16優先（BF16よりTensor Core効率）
-    if device == "cuda":
-        use_fp16 = True   # A40でTensor Core最適化
-        use_bf16 = False
-
-    return TrainingArguments(
-        output_dir=output_config.adapter_dir,
-        per_device_train_batch_size=cfg.training.batch_size,
-        gradient_accumulation_steps=cfg.training.gradient_accumulation_steps,
-        num_train_epochs=cfg.training.epochs,
-        learning_rate=cfg.training.lr,
-        lr_scheduler_type="cosine",
-        warmup_ratio=0.03,
-        
-        # ① Ampere最適化：FP16 + TF32
-        fp16=use_fp16,
-        bf16=use_bf16,
-        tf32=True,  # A40のTF32を有効化
-        
-        # ④ Fused Optimizer（8bitより高速）
-        optim="adamw_torch_fused",
-        
-        # ⑤ DataLoader最適化（public docs準拠）
-        dataloader_pin_memory=True,
-        dataloader_num_workers=8,  # vCPUに合わせて増加
-        dataloader_prefetch_factor=4,  # prefetch追加
-        
-        # torch.compile最適化（reduce-overhead mode）
-        torch_compile=True,
-        torch_compile_backend="inductor",
-        
-        # メモリ管理
-        torch_empty_cache_steps=4,
-        
-        # ② 評価・保存・ログ頻度削減
-        logging_steps=200,  # 粗めに設定
-        logging_dir=output_config.log_dir,
-        
-        # epoch評価で最速化
-        save_strategy="epoch",
-        save_total_limit=1,  # 最小限
-        eval_strategy="epoch",
-        load_best_model_at_end=False,  # 高速化のため無効
-        
-        seed=cfg.training.seed,
-        data_seed=cfg.training.seed,
-        report_to=cfg.logging.report_to,
-    )
-
-
-def save_artifacts(output_config, model: Any, tokenizer: AutoTokenizer) -> None:
-    """Save trained artifacts atomically with rollback on failure."""
-    from llama_lora.utils.storage import AtomicSaver
-
-    try:
-        logger.info("Starting atomic save of training artifacts")
-
-        with AtomicSaver(output_config.adapter_dir).atomic_operation() as saver:
-            saver.save_model_artifacts(
-                model=model,
-                tokenizer=tokenizer,
-                adapter_dir=output_config.adapter_dir,
-                tokenizer_dir=output_config.tokenizer_dir,
-            )
-
-        logger.info("All artifacts saved successfully")
-
-    except Exception as e:
-        raise TrainingError(f"Failed to save artifacts atomically: {str(e)}") from e
-
-
-@hydra.main(version_base=None, config_path="../../config", config_name="config")
-def main(cfg: DictConfig) -> None:
-    """Main training function for LoRA/DoRA fine-tuning.
-
-    Args:
-        cfg: Hydra configuration object containing all parameters.
-
-    This function orchestrates the complete training pipeline including:
-    - Configuration validation and logging
-    - Device detection and setup
-    - Dataset loading and preprocessing
-    - Model loading and PEFT configuration
-    - Training with automatic mixed precision
-    - Saving of trained artifacts
-    """
-    try:
-        validate_and_log_config(cfg)
-
-        from config.schema import save_experiment_metadata, HydraConfig
-
-        # Convert to HydraConfig first, then to Pydantic
-        hydra_config = HydraConfig(
-            model=cfg.model,
-            dataset=cfg.dataset,
-            training=cfg.training,
-            peft=cfg.peft,
-            output=cfg.output,
-            logging=cfg.logging,
-        )
-        pydantic_cfg = hydra_config.to_pydantic_config()
-        output_config = pydantic_cfg.output
-
-        logger.info("Using structured output paths:")
-        logger.info(f"  Base: {output_config.base_output_dir}")
-        logger.info(f"  Experiment: {output_config.experiment_name}")
-        logger.info(f"  Run ID: {output_config.run_id}")
-        logger.info(f"  Adapter: {output_config.adapter_dir}")
-        logger.info(f"  Logs: {output_config.log_dir}")
-
-        metadata_file = save_experiment_metadata(
-            OmegaConf.to_container(cfg, resolve=True), output_config
-        )
-        logger.info(f"Experiment metadata saved to: {metadata_file}")
-
-        device = DeviceManager.detect_device()
-        logger.info(f"Using device: {device}")
-        SeedManager.setup_seed(cfg.training.seed)
-
-        tokenizer = load_and_setup_tokenizer(cfg.model.model_id)
-        train_dataset, eval_dataset = load_and_process_dataset(cfg, tokenizer)
-
-        collator = DataCollatorForLanguageModeling(
-            tokenizer=tokenizer,
-            mlm=False,
-            pad_to_multiple_of=8,
-            return_tensors="pt",
-        )
-
-        model = load_and_setup_model(cfg)
-        training_args = setup_training_arguments(cfg, output_config, device)
-
-        trainer = Trainer(
-            model=model,
-            args=training_args,
-            train_dataset=train_dataset,
-            eval_dataset=eval_dataset,
-            data_collator=collator,
-            callbacks=[
-                EarlyStoppingCallback(
-                    early_stopping_patience=cfg.training.early_stopping_patience
-                )
-            ],
-        )
-
-        logger.info("Starting training...")
-        trainer.train()
-        logger.info("Training finished successfully")
-
-        save_artifacts(output_config, model, tokenizer)
-
-        logger.info("Training pipeline completed successfully!")
-        logger.info(f"Final configuration:\n{OmegaConf.to_yaml(cfg)}")
-
-    except Exception as e:
+        raise ModelLoadingError(f"Failed to load or setup model: {str(e)}") from e Exception as e:
         logger.error(f"Training failed: {str(e)}", exc_info=True)
         raise
 
