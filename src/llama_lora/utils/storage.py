@@ -198,140 +198,150 @@ class RunDiscovery:
     @staticmethod
     def find_latest_run(base_output_dir: str, experiment_name: str) -> str:
         """Find the most recent run ID for a given experiment.
-        
+
         Args:
             base_output_dir: Base output directory path.
             experiment_name: Name of the experiment.
-            
+
         Returns:
             The run_id of the most recent run.
-            
+
         Raises:
             FileNotFoundError: If no runs are found.
             ValueError: If multiple runs have the same timestamp.
         """
         runs_dir = Path(base_output_dir) / "experiments" / experiment_name / "runs"
-        
+
         if not runs_dir.exists():
             raise FileNotFoundError(
                 f"No runs directory found for experiment '{experiment_name}' "
                 f"at path: {runs_dir}"
             )
-        
+
         # Get all run directories
         run_dirs = [d for d in runs_dir.iterdir() if d.is_dir()]
-        
+
         if not run_dirs:
             raise FileNotFoundError(
                 f"No runs found for experiment '{experiment_name}' "
                 f"in directory: {runs_dir}"
             )
-        
+
         # Sort by modification time (newest first)
         run_dirs.sort(key=lambda x: x.stat().st_mtime, reverse=True)
-        
+
         latest_run = run_dirs[0]
         return latest_run.name
 
     @staticmethod
-    def validate_run_artifacts(base_output_dir: str, experiment_name: str, run_id: str) -> dict:
+    def validate_run_artifacts(
+        base_output_dir: str, experiment_name: str, run_id: str
+    ) -> dict:
         """Validate that a run has all necessary artifacts.
-        
+
         Args:
             base_output_dir: Base output directory path.
             experiment_name: Name of the experiment.
             run_id: The run ID to validate.
-            
+
         Returns:
             Dictionary with artifact paths and their existence status.
-            
+
         Raises:
             FileNotFoundError: If the run directory doesn't exist.
         """
-        run_base = Path(base_output_dir) / "experiments" / experiment_name / "runs" / run_id
-        
+        run_base = (
+            Path(base_output_dir) / "experiments" / experiment_name / "runs" / run_id
+        )
+
         if not run_base.exists():
             raise FileNotFoundError(f"Run directory not found: {run_base}")
-        
+
         artifacts = {
             "adapter_dir": run_base / "artifacts" / "adapter",
             "tokenizer_dir": run_base / "artifacts" / "tokenizer",
             "merged_dir": run_base / "artifacts" / "merged",
             "logs_dir": run_base / "logs",
-            "metadata_dir": run_base / "metadata"
+            "metadata_dir": run_base / "metadata",
         }
-        
+
         # Check existence and return status
         status = {}
         for name, path in artifacts.items():
             status[name] = {
                 "path": str(path),
                 "exists": path.exists(),
-                "is_dir": path.is_dir() if path.exists() else False
+                "is_dir": path.is_dir() if path.exists() else False,
             }
-        
+
         return status
 
     @staticmethod
     def get_available_runs(base_output_dir: str, experiment_name: str) -> list:
         """Get list of all available runs for an experiment.
-        
+
         Args:
             base_output_dir: Base output directory path.
             experiment_name: Name of the experiment.
-            
+
         Returns:
             List of run IDs sorted by creation time (newest first).
         """
         runs_dir = Path(base_output_dir) / "experiments" / experiment_name / "runs"
-        
+
         if not runs_dir.exists():
             return []
-        
+
         run_dirs = [d for d in runs_dir.iterdir() if d.is_dir()]
         run_dirs.sort(key=lambda x: x.stat().st_mtime, reverse=True)
-        
+
         return [d.name for d in run_dirs]
 
     @staticmethod
-    def find_run_with_artifacts(base_output_dir: str, experiment_name: str, 
-                               required_artifacts: list = None) -> str:
+    def find_run_with_artifacts(
+        base_output_dir: str, experiment_name: str, required_artifacts: list = None
+    ) -> str:
         """Find the latest run that has all required artifacts.
-        
+
         Args:
             base_output_dir: Base output directory path.
             experiment_name: Name of the experiment.
-            required_artifacts: List of required artifact names. 
+            required_artifacts: List of required artifact names.
                               Defaults to ['adapter_dir', 'tokenizer_dir'].
-            
+
         Returns:
             The run_id of the most recent run with all artifacts.
-            
+
         Raises:
             FileNotFoundError: If no valid runs are found.
         """
         if required_artifacts is None:
-            required_artifacts = ['adapter_dir', 'tokenizer_dir']
-        
-        available_runs = RunDiscovery.get_available_runs(base_output_dir, experiment_name)
-        
+            required_artifacts = ["adapter_dir", "tokenizer_dir"]
+
+        available_runs = RunDiscovery.get_available_runs(
+            base_output_dir, experiment_name
+        )
+
         for run_id in available_runs:
             try:
                 artifacts = RunDiscovery.validate_run_artifacts(
                     base_output_dir, experiment_name, run_id
                 )
-                
+
                 # Check if all required artifacts exist
-                if all(artifacts[artifact]['exists'] for artifact in required_artifacts):
+                if all(
+                    artifacts[artifact]["exists"] for artifact in required_artifacts
+                ):
                     return run_id
-                    
+
             except FileNotFoundError:
                 continue
-        
+
         raise FileNotFoundError(
             f"No runs found with required artifacts {required_artifacts} "
             f"for experiment '{experiment_name}'"
         )
+
 
 class InferencePathResolver:
     """Resolve paths for inference based on configuration and auto-discovery."""
@@ -339,101 +349,101 @@ class InferencePathResolver:
     @staticmethod
     def resolve_paths(output_config, inference_config=None):
         """Resolve adapter and tokenizer paths based on configuration.
-        
+
         Args:
             output_config: Output configuration object.
             inference_config: Inference-specific configuration (optional).
-            
+
         Returns:
             Dictionary with resolved 'adapter_dir' and 'tokenizer_dir' paths.
-            
+
         Raises:
             FileNotFoundError: If no valid paths can be resolved.
             ValueError: If configuration is invalid.
         """
         # Check if direct paths are specified
-        if hasattr(output_config, 'adapter_dir') and output_config.adapter_dir:
+        if hasattr(output_config, "adapter_dir") and output_config.adapter_dir:
             adapter_dir = output_config.adapter_dir
-            tokenizer_dir = getattr(output_config, 'tokenizer_dir', adapter_dir)
-            
+            tokenizer_dir = getattr(output_config, "tokenizer_dir", adapter_dir)
+
             # Validate that paths exist
             PathManager.validate_directory_exists(adapter_dir, "Adapter directory")
             if tokenizer_dir != adapter_dir:
-                PathManager.validate_directory_exists(tokenizer_dir, "Tokenizer directory")
-            
-            return {
-                "adapter_dir": adapter_dir,
-                "tokenizer_dir": tokenizer_dir
-            }
-        
+                PathManager.validate_directory_exists(
+                    tokenizer_dir, "Tokenizer directory"
+                )
+
+            return {"adapter_dir": adapter_dir, "tokenizer_dir": tokenizer_dir}
+
         # Check if specific run_id is provided
-        if hasattr(output_config, 'run_id') and output_config.run_id:
+        if hasattr(output_config, "run_id") and output_config.run_id:
             run_id = output_config.run_id
             base_path = f"{output_config.base_output_dir}/experiments/{output_config.experiment_name}/runs/{run_id}"
-            
+
             adapter_dir = f"{base_path}/artifacts/adapter"
             tokenizer_dir = f"{base_path}/artifacts/tokenizer"
-            
+
             # Validate that paths exist
             PathManager.validate_directory_exists(adapter_dir, "Adapter directory")
             PathManager.validate_directory_exists(tokenizer_dir, "Tokenizer directory")
-            
-            return {
-                "adapter_dir": adapter_dir,
-                "tokenizer_dir": tokenizer_dir
-            }
-        
+
+            return {"adapter_dir": adapter_dir, "tokenizer_dir": tokenizer_dir}
+
         # Auto-discovery mode
         auto_find = True
-        if inference_config and hasattr(inference_config, 'auto_find_latest_run'):
+        if inference_config and hasattr(inference_config, "auto_find_latest_run"):
             auto_find = inference_config.auto_find_latest_run
-        
+
         if auto_find:
             try:
                 # Find latest run with required artifacts
                 run_id = RunDiscovery.find_run_with_artifacts(
-                    output_config.base_output_dir,
-                    output_config.experiment_name
+                    output_config.base_output_dir, output_config.experiment_name
                 )
-                
+
                 base_path = f"{output_config.base_output_dir}/experiments/{output_config.experiment_name}/runs/{run_id}"
-                
+
                 return {
                     "adapter_dir": f"{base_path}/artifacts/adapter",
                     "tokenizer_dir": f"{base_path}/artifacts/tokenizer",
-                    "discovered_run_id": run_id
+                    "discovered_run_id": run_id,
                 }
-                
+
             except FileNotFoundError as e:
                 # Check for fallback run_id
-                if (inference_config and 
-                    hasattr(inference_config, 'fallback_run_id') and 
-                    inference_config.fallback_run_id):
-                    
+                if (
+                    inference_config
+                    and hasattr(inference_config, "fallback_run_id")
+                    and inference_config.fallback_run_id
+                ):
                     fallback_id = inference_config.fallback_run_id
                     base_path = f"{output_config.base_output_dir}/experiments/{output_config.experiment_name}/runs/{fallback_id}"
-                    
+
                     adapter_dir = f"{base_path}/artifacts/adapter"
                     tokenizer_dir = f"{base_path}/artifacts/tokenizer"
-                    
+
                     try:
-                        PathManager.validate_directory_exists(adapter_dir, "Fallback adapter directory")
-                        PathManager.validate_directory_exists(tokenizer_dir, "Fallback tokenizer directory")
-                        
+                        PathManager.validate_directory_exists(
+                            adapter_dir, "Fallback adapter directory"
+                        )
+                        PathManager.validate_directory_exists(
+                            tokenizer_dir, "Fallback tokenizer directory"
+                        )
+
                         return {
                             "adapter_dir": adapter_dir,
                             "tokenizer_dir": tokenizer_dir,
-                            "used_fallback": True
+                            "used_fallback": True,
                         }
                     except FileNotFoundError:
                         pass
-                
+
                 # No valid paths found
                 raise FileNotFoundError(
                     f"No valid training runs found for experiment '{output_config.experiment_name}'. "
                     f"Please run training first or specify explicit paths. Original error: {str(e)}"
                 )
-        
+
         # If auto-discovery is disabled and no explicit paths provided
         raise ValueError(
             "No paths specified and auto-discovery is disabled. "

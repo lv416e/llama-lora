@@ -199,14 +199,14 @@ def main(args: argparse.Namespace) -> None:
 
         # Build Hydra overrides from command-line arguments
         overrides = []
-        
+
         # Handle backward compatibility for run_id and adapter_dir
         if args.run_id:
             overrides.append(f"inference.run_id={args.run_id}")
         if args.adapter_dir:
             overrides.append(f"inference.adapter_dir={args.adapter_dir}")
             overrides.append(f"inference.tokenizer_dir={args.adapter_dir}")
-            
+
         # Override generation parameters from command line
         overrides.append(f"inference.max_new_tokens={args.max_new_tokens}")
         overrides.append(f"inference.temperature={args.temperature}")
@@ -225,7 +225,7 @@ def main(args: argparse.Namespace) -> None:
             peft=cfg.peft,
             output=cfg.output,
             logging=cfg.logging,
-            inference=getattr(cfg, 'inference', None) or HydraConfig().inference,
+            inference=getattr(cfg, "inference", None) or HydraConfig().inference,
         )
         pydantic_cfg = hydra_config.to_pydantic_config()
         output_config = pydantic_cfg.output
@@ -235,11 +235,11 @@ def main(args: argparse.Namespace) -> None:
         resolved_paths = InferencePathResolver.resolve_paths(
             output_config, inference_config
         )
-        
+
         # Update output_config with resolved paths
         output_config.adapter_dir = resolved_paths["adapter_dir"]
         output_config.tokenizer_dir = resolved_paths["tokenizer_dir"]
-        
+
         # Set correct run_id and metadata_dir for inference logging
         if "discovered_run_id" in resolved_paths:
             discovered_run_id = resolved_paths["discovered_run_id"]
@@ -323,17 +323,19 @@ def main(args: argparse.Namespace) -> None:
 
         session_file = inference_logger.save_session()
         comparison_file = inference_logger.export_comparison_data()
-        
+
         # Log session information with new session-based structure
         session_info = inference_logger.get_session_info()
-        
-        logger.info(f"Session completed successfully")
+
+        logger.info("Session completed successfully")
         logger.info(f"  Session ID: {session_info['session_id']}")
         logger.info(f"  Session directory: {session_info['session_dir']}")
         logger.info(f"  Total inferences: {session_info['inference_count']}")
         logger.info(f"  Session summary: {session_file}")
         logger.info(f"  Legacy comparison: {comparison_file}")
-        logger.info("Inference session saved with session accumulation (MLOps industry standard)")
+        logger.info(
+            "Inference session saved with session accumulation (MLOps industry standard)"
+        )
 
     except Exception as e:
         logger.error(f"Inference failed: {str(e)}", exc_info=True)
@@ -368,35 +370,35 @@ Enhanced Usage Patterns:
         type=int,
         default=128,
         help="Maximum number of new tokens to generate (default: 128). "
-             "Overrides inference config if specified.",
+        "Overrides inference config if specified.",
     )
     parser.add_argument(
         "--temperature",
         type=float,
         default=0.7,
         help="Sampling temperature (0.0-2.0, higher = more random, default: 0.7). "
-             "Overrides inference config if specified.",
+        "Overrides inference config if specified.",
     )
     parser.add_argument(
         "--top_p",
         type=float,
         default=0.9,
         help="Nucleus sampling parameter (0.0-1.0, default: 0.9). "
-             "Overrides inference config if specified.",
+        "Overrides inference config if specified.",
     )
     parser.add_argument(
         "--run_id",
         type=str,
         default="",
         help="[LEGACY] Specific run ID to use for inference. "
-             "Prefer using 'inference.run_id=VALUE' in Hydra overrides.",
+        "Prefer using 'inference.run_id=VALUE' in Hydra overrides.",
     )
     parser.add_argument(
         "--adapter_dir",
         type=str,
         default="",
         help="[LEGACY] Direct path to adapter directory. "
-             "Prefer using 'inference.adapter_dir=PATH' in Hydra overrides.",
+        "Prefer using 'inference.adapter_dir=PATH' in Hydra overrides.",
     )
 
     cli_args = parser.parse_args()

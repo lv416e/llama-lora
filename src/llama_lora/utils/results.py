@@ -43,7 +43,7 @@ class InferenceResult:
 
 class InferenceLogger:
     """Session-based inference logging system following MLOps industry standards.
-    
+
     Implements session accumulation pattern as used by MLflow and Langfuse for
     production observability, enabling session context tracking, user journey
     analysis, and continuous monitoring.
@@ -52,22 +52,23 @@ class InferenceLogger:
     def __init__(self, output_config: OutputConfig, session_name: Optional[str] = None):
         self.output_config = output_config
         self.results: List[InferenceResult] = []
-        
+
         # Generate unique session ID: timestamp + UUID for production traceability
         import uuid
+
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        short_uuid = str(uuid.uuid4()).replace('-', '')[:8]
+        short_uuid = str(uuid.uuid4()).replace("-", "")[:8]
         self.session_id = f"{timestamp}_{short_uuid}"
         self.session_name = session_name or "inference_session"
-        
+
         # Create session-based directory structure
         self.inference_dir = Path(output_config.metadata_dir) / "inference"
         self.sessions_dir = self.inference_dir / "sessions"
         self.session_dir = self.sessions_dir / self.session_id
-        
+
         # Ensure directory structure exists
         self.session_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Session metadata
         self.session_start_time = datetime.now().isoformat()
 
@@ -91,7 +92,7 @@ class InferenceLogger:
         )
 
         self.results.append(result)
-        
+
         # Save individual trace immediately for observability
         trace_file = self.session_dir / f"trace_{len(self.results):03d}.json"
         trace_data = {
@@ -104,14 +105,14 @@ class InferenceLogger:
             },
             "inference": result.to_dict(),
         }
-        
+
         try:
             with open(trace_file, "w") as f:
                 json.dump(trace_data, f, indent=2)
         except (OSError, IOError) as e:
             # Non-critical error, continue execution
             print(f"Warning: Failed to save trace {len(self.results)}: {str(e)}")
-        
+
         return result
 
     def save_session(self) -> str:
@@ -135,13 +136,14 @@ class InferenceLogger:
                 "total_execution_time": sum(r.execution_time for r in self.results),
                 "average_execution_time": (
                     sum(r.execution_time for r in self.results) / len(self.results)
-                    if self.results else 0
+                    if self.results
+                    else 0
                 ),
                 "inference_count": len(self.results),
             },
             "trace_files": [
-                f"trace_{i+1:03d}.json" for i in range(len(self.results))
-            ]
+                f"trace_{i + 1:03d}.json" for i in range(len(self.results))
+            ],
         }
 
         try:
@@ -164,7 +166,8 @@ class InferenceLogger:
                 "total_inferences": len(self.results),
                 "average_execution_time": (
                     sum(r.execution_time for r in self.results) / len(self.results)
-                    if self.results else 0
+                    if self.results
+                    else 0
                 ),
                 "session_id": self.session_id,  # Link to session
             },

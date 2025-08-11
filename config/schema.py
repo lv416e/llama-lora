@@ -23,7 +23,7 @@ class HydraModelConfig:
 
 @dataclass
 class HydraDatasetConfig:
-    dataset_id: str = "tatsu-lab/alpaca"
+    dataset_id: str = "izumi-lab/llm-japanese-dataset"
     dataset_split: str = "train"
     val_ratio: float = 0.1
 
@@ -76,10 +76,12 @@ class HydraOutputConfig:
         # Inference should use existing run_ids or auto-discovery
         if not self.run_id:
             import os
+
             # Check if we're in inference mode by looking at the calling script
             import sys
+
             script_name = os.path.basename(sys.argv[0]) if sys.argv else ""
-            
+
             # Don't auto-generate run_id for inference scripts
             if "infer" not in script_name.lower():
                 from llama_lora.utils.common import (
@@ -104,7 +106,9 @@ class HydraOutputConfig:
 
         # Only set paths if run_id is available
         if self.run_id:
-            experiment_base = f"{self.base_output_dir}/experiments/{self.experiment_name}"
+            experiment_base = (
+                f"{self.base_output_dir}/experiments/{self.experiment_name}"
+            )
             run_base = f"{experiment_base}/runs/{self.run_id}"
 
             if not self.adapter_dir:
@@ -229,6 +233,7 @@ class HydraLoggingConfig:
     report_to: str = "tensorboard"
     project_name: Optional[str] = None
 
+
 @dataclass
 class HydraInferenceConfig:
     auto_find_latest_run: bool = True
@@ -236,7 +241,7 @@ class HydraInferenceConfig:
     run_id: Optional[str] = None
     adapter_dir: Optional[str] = None
     tokenizer_dir: Optional[str] = None
-    
+
     # Generation parameters
     max_new_tokens: int = 128
     temperature: float = 0.7
@@ -290,26 +295,28 @@ class HydraConfig:  # noqa
             output=OutputConfig(
                 base_output_dir=self.output.base_output_dir,
                 experiment_name=self.output.experiment_name,
-                run_id=getattr(self.output, 'run_id', ''),
-                adapter_dir=getattr(self.output, 'adapter_dir', ''),
-                tokenizer_dir=getattr(self.output, 'tokenizer_dir', ''),
-                merged_dir=getattr(self.output, 'merged_dir', ''),
-                log_dir=getattr(self.output, 'log_dir', ''),
-                metadata_dir=getattr(self.output, 'metadata_dir', ''),
+                run_id=getattr(self.output, "run_id", ""),
+                adapter_dir=getattr(self.output, "adapter_dir", ""),
+                tokenizer_dir=getattr(self.output, "tokenizer_dir", ""),
+                merged_dir=getattr(self.output, "merged_dir", ""),
+                log_dir=getattr(self.output, "log_dir", ""),
+                metadata_dir=getattr(self.output, "metadata_dir", ""),
             ),
             logging=LoggingConfig(
                 report_to=self.logging.report_to,
                 project_name=self.logging.project_name,
             ),
             inference=InferenceConfig(
-                auto_find_latest_run=getattr(self.inference, 'auto_find_latest_run', True),
-                fallback_run_id=getattr(self.inference, 'fallback_run_id', None),
-                run_id=getattr(self.inference, 'run_id', None),
-                adapter_dir=getattr(self.inference, 'adapter_dir', None),
-                tokenizer_dir=getattr(self.inference, 'tokenizer_dir', None),
-                max_new_tokens=getattr(self.inference, 'max_new_tokens', 128),
-                temperature=getattr(self.inference, 'temperature', 0.7),
-                top_p=getattr(self.inference, 'top_p', 0.9),
+                auto_find_latest_run=getattr(
+                    self.inference, "auto_find_latest_run", True
+                ),
+                fallback_run_id=getattr(self.inference, "fallback_run_id", None),
+                run_id=getattr(self.inference, "run_id", None),
+                adapter_dir=getattr(self.inference, "adapter_dir", None),
+                tokenizer_dir=getattr(self.inference, "tokenizer_dir", None),
+                max_new_tokens=getattr(self.inference, "max_new_tokens", 128),
+                temperature=getattr(self.inference, "temperature", 0.7),
+                top_p=getattr(self.inference, "top_p", 0.9),
             ),
         )
 
@@ -331,7 +338,7 @@ class DatasetConfig(BaseModel):
     """Dataset configuration with validation."""
 
     dataset_id: str = Field(
-        default="tatsu-lab/alpaca", description="Dataset identifier"
+        default="izumi-lab/llm-japanese-dataset", description="Dataset identifier"
     )
     dataset_split: str = Field(default="train", description="Dataset split to use")
     val_ratio: float = Field(
@@ -398,8 +405,9 @@ class OutputConfig(BaseModel):
         if not self.run_id:
             import os
             import sys
+
             script_name = os.path.basename(sys.argv[0]) if sys.argv else ""
-            
+
             # Don't auto-generate run_id for inference scripts
             if "infer" not in script_name.lower():
                 from llama_lora.utils.common import (
@@ -424,7 +432,9 @@ class OutputConfig(BaseModel):
 
         # Only set paths if run_id is available
         if self.run_id:
-            experiment_base = f"{self.base_output_dir}/experiments/{self.experiment_name}"
+            experiment_base = (
+                f"{self.base_output_dir}/experiments/{self.experiment_name}"
+            )
             run_base = f"{experiment_base}/runs/{self.run_id}"
 
             if not self.adapter_dir:
@@ -464,6 +474,7 @@ class LoggingConfig(BaseModel):
         default=None, description="Experiment or project name for logging"
     )
 
+
 class InferenceConfig(BaseModel):
     """Inference configuration with validation."""
 
@@ -482,7 +493,7 @@ class InferenceConfig(BaseModel):
     tokenizer_dir: Optional[str] = Field(
         default=None, description="Direct path to tokenizer directory"
     )
-    
+
     # Generation parameters
     max_new_tokens: int = Field(
         default=128, ge=1, le=2048, description="Maximum number of tokens to generate"
@@ -560,5 +571,13 @@ cs.store(group="peft", name="lora_32", node=HydraPEFTConfig(r=32, lora_alpha=64)
 
 # Inference configurations
 cs.store(group="inference", name="base", node=HydraInferenceConfig())
-cs.store(group="inference", name="latest", node=HydraInferenceConfig(auto_find_latest_run=True))
-cs.store(group="inference", name="manual", node=HydraInferenceConfig(auto_find_latest_run=False))
+cs.store(
+    group="inference",
+    name="latest",
+    node=HydraInferenceConfig(auto_find_latest_run=True),
+)
+cs.store(
+    group="inference",
+    name="manual",
+    node=HydraInferenceConfig(auto_find_latest_run=False),
+)
