@@ -1,7 +1,7 @@
 [project]
 name = "llama-lora"
 version = "0.1.0"
-description = "Add your description here"
+description = "LoRA/DoRA fine-tuning for Llama models with modern optimizations"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -11,9 +11,20 @@ dependencies = [
     "jupyter>=1.1.1",
     "peft>=0.17.0",
     "pydantic>=2.11.7",
+    "pytest>=8.4.1",
     "ruff>=0.12.8",
     "tensorboard>=2.20.0",
     "torch>=2.8.0",
+    "tqdm>=4.67.1",
     "transformers>=4.55.0",
     "wandb>=0.21.1",
 ]
+
+[project.scripts]
+llama-lora-train = "llama_lora.train:main"
+llama-lora-infer = "llama_lora.infer:main"
+llama-lora-merge = "llama_lora.merge:main"
+llama-lora-baseline = "llama_lora.baseline:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,13 @@
+defaults:
+  - base
+
+# Manual specification template
+# Use this when you need to specify exact paths or run IDs
+auto_find_latest_run: false
+
+# Specify exact run_id (will construct paths automatically)
+# run_id: "20250811_072332_12e4b578"
+
+# OR specify direct paths (overrides run_id if both provided)
+# adapter_dir: "/path/to/specific/adapter"
+# tokenizer_dir: "/path/to/specific/tokenizer"

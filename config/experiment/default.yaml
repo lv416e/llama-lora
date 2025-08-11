@@ -1,0 +1,49 @@
+# @package _global_
+defaults:
+  - _self_
+
+# Config group selections via structured configs
+# These will be validated against HydraConfig schema
+
+# Default LoRA experiment configuration
+model:
+  model_id: meta-llama/Llama-3.2-1B-Instruct
+  use_dora: false
+  seq_len: 1024
+
+dataset:
+  dataset_id: tatsu-lab/alpaca
+  dataset_split: "train[:1%]"  # Quick test with 1% data
+  val_ratio: 0.1
+
+training:
+  lr: 2e-5
+  batch_size: 1
+  gradient_accumulation_steps: 8
+  epochs: 1
+  seed: 42
+  eval_steps: 200
+  early_stopping_patience: 3
+
+peft:
+  r: 8
+  lora_alpha: 16
+  lora_dropout: 0.1
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - down_proj
+    - up_proj
+
+output:
+  base_output_dir: ./outputs
+  experiment_name: default
+  # Paths will be auto-generated as:
+  # ./outputs/experiments/default/runs/{timestamp}/
+
+logging:
+  report_to: tensorboard
+  project_name: llama-lora-default

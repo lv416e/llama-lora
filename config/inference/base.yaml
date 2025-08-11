@@ -1,0 +1,18 @@
+# Base inference configuration
+# This configuration defines common settings for inference tasks
+
+# Default behavior for inference
+auto_find_latest_run: true
+fallback_run_id: null
+
+# Override specific run if needed
+# run_id: "20250811_072332_12e4b578"
+
+# Override specific adapter path if needed  
+# adapter_dir: "/path/to/adapter"
+# tokenizer_dir: "/path/to/tokenizer"
+
+# Generation parameters (flat structure to match schema)
+max_new_tokens: 128
+temperature: 0.7
+top_p: 0.9

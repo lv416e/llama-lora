@@ -1,0 +1,29 @@
+# @package _global_
+defaults:
+  - override /training: standard
+  - override /dataset: alpaca_full
+  - override /peft: lora_32
+
+# Full training configuration for production
+training:
+  epochs: 5
+  lr: 1e-5
+  gradient_accumulation_steps: 16
+  eval_steps: 100
+  early_stopping_patience: 5
+
+dataset:
+  dataset_split: "train"
+  val_ratio: 0.05
+
+peft:
+  r: 32
+  lora_alpha: 64
+  lora_dropout: 0.1
+
+output:
+  experiment_name: full-training
+
+logging:
+  report_to: tensorboard
+  project_name: llama-lora-full

@@ -1,0 +1,10 @@
+defaults:
+  - base
+
+# Automatically use the latest available run
+# This is the default behavior for most inference tasks
+auto_find_latest_run: true
+fallback_run_id: null
+
+# This configuration will automatically discover the most recent
+# training run based on timestamp and use its adapter/tokenizer
