@@ -180,25 +180,44 @@ def load_and_setup_model(cfg: DictConfig) -> Any:
             f"Loading base model '{cfg.model.model_id}' with auto optimization..."
         )
 
+        # ① TF32とSDPA最適化を有効化
+        import torch
+        torch.set_float32_matmul_precision("high")  # TF32を許可
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+
         try:
             model = AutoModelForCausalLM.from_pretrained(
                 cfg.model.model_id,
                 device_map="auto",
-                torch_dtype="auto",
-                attn_implementation="flash_attention_2",
+                torch_dtype=torch.bfloat16,  # A40のBF16活用
+                attn_implementation="sdpa",   # SDPAを強制
                 trust_remote_code=True,
             )
+            logger.info("SDPA attention implementation enabled")
         except ImportError:
             logger.warning(
-                "FlashAttention2 not available, falling back to eager attention"
+                "SDPA not available, falling back to FlashAttention2"
             )
-            model = AutoModelForCausalLM.from_pretrained(
-                cfg.model.model_id,
-                device_map="auto",
-                torch_dtype="auto",
-                attn_implementation="eager",
-                trust_remote_code=True,
-            )
+            try:
+                model = AutoModelForCausalLM.from_pretrained(
+                    cfg.model.model_id,
+                    device_map="auto",
+                    torch_dtype=torch.bfloat16,
+                    attn_implementation="flash_attention_2",
+                    trust_remote_code=True,
+                )
+            except ImportError:
+                logger.warning(
+                    "FlashAttention2 not available, falling back to eager attention"
+                )
+                model = AutoModelForCausalLM.from_pretrained(
+                    cfg.model.model_id,
+                    device_map="auto",
+                    torch_dtype=torch.bfloat16,
+                    attn_implementation="eager",
+                    trust_remote_code=True,
+                )
 
         model.config.use_cache = False
         if hasattr(model, "gradient_checkpointing_enable"):
@@ -243,29 +262,53 @@ def setup_training_arguments(
     PathManager.ensure_directory(output_config.adapter_dir)
     PathManager.ensure_directory(output_config.log_dir)
 
+    # A40 Ampere最適化：BF16優先、TF32有効
+    if device == "cuda":
+        use_bf16 = True  # A40はBF16対応
+        use_fp16 = False
+
     return TrainingArguments(
         output_dir=output_config.adapter_dir,
         per_device_train_batch_size=cfg.training.batch_size,
         gradient_accumulation_steps=cfg.training.gradient_accumulation_steps,
         num_train_epochs=cfg.training.epochs,
         learning_rate=cfg.training.lr,
+        lr_scheduler_type="cosine",
+        warmup_ratio=0.03,
+        
+        # ② Ampere最適化
         fp16=use_fp16,
         bf16=use_bf16,
-        dataloader_pin_memory=False,
-        logging_steps=10,
+        tf32=True,  # A40のTF32を有効化
+        
+        # ④ Optimizer最適化
+        optim="adamw_torch_fused",  # Fused AdamW
+        
+        # ⑤ DataLoader最適化
+        dataloader_pin_memory=True,
+        dataloader_num_workers=4,
+        
+        # torch.compile最適化
+        torch_compile=True,
+        torch_compile_backend="inductor",
+        
+        # メモリ管理
+        torch_empty_cache_steps=4,
+        
+        logging_steps=50,  # ログ頻度を下げる
         logging_dir=output_config.log_dir,
-        save_strategy="steps",
-        save_steps=200,
+        
+        # 評価・保存頻度を下げる
+        save_strategy="epoch",
         save_total_limit=2,
-        eval_strategy="steps",
-        eval_steps=cfg.training.eval_steps,
+        eval_strategy="epoch",
         load_best_model_at_end=True,
         metric_for_best_model="eval_loss",
         greater_is_better=False,
+        
         seed=cfg.training.seed,
         data_seed=cfg.training.seed,
         report_to=cfg.logging.report_to,
-        optim="adamw_torch",
     )
 
 

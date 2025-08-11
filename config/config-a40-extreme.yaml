@@ -21,7 +21,7 @@ training:
   gradient_accumulation_steps: 1  # No accumulation needed
   epochs: 1  # Single epoch for quick testing
   seed: 42
-  eval_steps: 200  # Aligned with save_steps
+  # epoch-based evaluation for maximum speed
   early_stopping_patience: 2
 
 peft:
