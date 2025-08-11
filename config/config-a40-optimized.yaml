@@ -21,7 +21,7 @@ training:
   gradient_accumulation_steps: 2  # Reduced from 8 (effective batch size: 128)
   epochs: 2  # Reduced from 5 for faster experimentation
   seed: 42
-  eval_steps: 200  # Increased from 100 for less frequent evaluation
+  eval_steps: 200  # Aligned with save_steps
   early_stopping_patience: 3
 
 peft:
