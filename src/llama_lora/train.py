@@ -177,53 +177,31 @@ def load_and_setup_model(cfg: DictConfig) -> Any:
     """
     try:
         logger.info(
-            f"Loading base model '{cfg.model.model_id}' with auto optimization..."
+            f"Loading base model '{cfg.model.model_id}' with ultimate optimization..."
         )
 
-        # ① TF32とSDPA最適化を有効化
+        # ① SDPA + TF32最適化を起動時強制（public docs準拠）
         import torch
         torch.set_float32_matmul_precision("high")  # TF32を許可
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
+        logger.info("TF32/CUDA optimizations enabled")
 
-        try:
-            model = AutoModelForCausalLM.from_pretrained(
-                cfg.model.model_id,
-                device_map="auto",
-                torch_dtype=torch.bfloat16,  # A40のBF16活用
-                attn_implementation="sdpa",   # SDPAを強制
-                trust_remote_code=True,
-            )
-            logger.info("SDPA attention implementation enabled")
-        except ImportError:
-            logger.warning(
-                "SDPA not available, falling back to FlashAttention2"
-            )
-            try:
-                model = AutoModelForCausalLM.from_pretrained(
-                    cfg.model.model_id,
-                    device_map="auto",
-                    torch_dtype=torch.bfloat16,
-                    attn_implementation="flash_attention_2",
-                    trust_remote_code=True,
-                )
-            except ImportError:
-                logger.warning(
-                    "FlashAttention2 not available, falling back to eager attention"
-                )
-                model = AutoModelForCausalLM.from_pretrained(
-                    cfg.model.model_id,
-                    device_map="auto",
-                    torch_dtype=torch.bfloat16,
-                    attn_implementation="eager",
-                    trust_remote_code=True,
-                )
+        # SDPA強制有効化（Flash-Attn不要）
+        model = AutoModelForCausalLM.from_pretrained(
+            cfg.model.model_id,
+            device_map="auto",
+            torch_dtype=torch.float16,  # A40でTensor Core最適化
+            attn_implementation="sdpa",   # SDPA強制
+            trust_remote_code=True,
+        )
+        logger.info("SDPA attention implementation enabled with FP16")
 
         model.config.use_cache = False
         if hasattr(model, "gradient_checkpointing_enable"):
             model.gradient_checkpointing_enable()
 
-        logger.info("Setting up PEFT with LoRA/DoRA...")
+        logger.info("Setting up lightweight LoRA...")
         peft_config = LoraConfig(
             task_type=TaskType.CAUSAL_LM,
             r=cfg.peft.r,
@@ -262,10 +240,10 @@ def setup_training_arguments(
     PathManager.ensure_directory(output_config.adapter_dir)
     PathManager.ensure_directory(output_config.log_dir)
 
-    # A40 Ampere最適化：BF16優先、TF32有効
+    # A40 Ampere最適化：FP16優先（BF16よりTensor Core効率）
     if device == "cuda":
-        use_bf16 = True  # A40はBF16対応
-        use_fp16 = False
+        use_fp16 = True   # A40でTensor Core最適化
+        use_bf16 = False
 
     return TrainingArguments(
         output_dir=output_config.adapter_dir,
@@ -276,35 +254,35 @@ def setup_training_arguments(
         lr_scheduler_type="cosine",
         warmup_ratio=0.03,
         
-        # ② Ampere最適化
+        # ① Ampere最適化：FP16 + TF32
         fp16=use_fp16,
         bf16=use_bf16,
         tf32=True,  # A40のTF32を有効化
         
-        # ④ Optimizer最適化
-        optim="adamw_torch_fused",  # Fused AdamW
+        # ④ Fused Optimizer（8bitより高速）
+        optim="adamw_torch_fused",
         
-        # ⑤ DataLoader最適化
+        # ⑤ DataLoader最適化（public docs準拠）
         dataloader_pin_memory=True,
-        dataloader_num_workers=4,
+        dataloader_num_workers=8,  # vCPUに合わせて増加
+        dataloader_prefetch_factor=4,  # prefetch追加
         
-        # torch.compile最適化
+        # torch.compile最適化（reduce-overhead mode）
         torch_compile=True,
         torch_compile_backend="inductor",
         
         # メモリ管理
         torch_empty_cache_steps=4,
         
-        logging_steps=50,  # ログ頻度を下げる
+        # ② 評価・保存・ログ頻度削減
+        logging_steps=200,  # 粗めに設定
         logging_dir=output_config.log_dir,
         
-        # 評価・保存頻度を下げる
+        # epoch評価で最速化
         save_strategy="epoch",
-        save_total_limit=2,
+        save_total_limit=1,  # 最小限
         eval_strategy="epoch",
-        load_best_model_at_end=True,
-        metric_for_best_model="eval_loss",
-        greater_is_better=False,
+        load_best_model_at_end=False,  # 高速化のため無効
         
         seed=cfg.training.seed,
         data_seed=cfg.training.seed,

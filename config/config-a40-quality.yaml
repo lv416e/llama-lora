@@ -1,0 +1,50 @@
+defaults:
+  - inference: latest
+  - _self_
+
+# A40 Quality optimization - same time, better quality
+# 2h維持で精度向上狙い
+
+model:
+  model_id: meta-llama/Llama-3.2-1B-Instruct
+  use_dora: false
+  seq_len: 384  # Longer sequences for quality
+
+dataset:
+  dataset_id: izumi-lab/llm-japanese-dataset
+  dataset_split: "train[:1%]"
+  val_ratio: 0.1
+
+training:
+  lr: 2e-5  # Lower LR for stability
+  batch_size: 64  # Smaller for 4bit quantization
+  gradient_accumulation_steps: 2  # Effective batch: 128
+  epochs: 2
+  seed: 42
+  eval_steps: 400
+
+peft:
+  r: 32  # Higher rank for better expressivity
+  lora_alpha: 64  # Proportional alpha
+  lora_dropout: 0.1
+  target_modules:
+    - q_proj
+    - k_proj  # Added for quality
+    - v_proj
+    - o_proj
+    - gate_proj  # Added for quality
+
+# QLoRA 4-bit for memory efficiency
+quantization:
+  load_in_4bit: true
+  bnb_4bit_quant_type: "nf4"
+  bnb_4bit_compute_dtype: "bfloat16"
+  bnb_4bit_use_double_quant: true
+
+output:
+  base_output_dir: ./outputs
+  experiment_name: a40-quality
+
+logging:
+  report_to: tensorboard
+  project_name: llama-lora-a40-quality

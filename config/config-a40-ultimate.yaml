@@ -1,0 +1,42 @@
+defaults:
+  - inference: latest
+  - _self_
+
+# A40 ULTIMATE optimization for 1-hour cut target
+# All optimizations from public docs applied
+
+model:
+  model_id: meta-llama/Llama-3.2-1B-Instruct
+  use_dora: false
+  seq_len: 320  # Optimized for Japanese text padding reduction
+
+dataset:
+  dataset_id: izumi-lab/llm-japanese-dataset
+  dataset_split: "train[:1%]"
+  val_ratio: 0.1
+
+training:
+  lr: 3e-5  # Higher LR for faster convergence
+  batch_size: 96  # Tensor Core aligned (×8)
+  gradient_accumulation_steps: 1  # No accumulation
+  epochs: 2  # Minimum for quality
+  seed: 42
+  eval_steps: 400  # Large value for epoch-based override
+
+peft:
+  r: 16  # Keep 16 for quality balance
+  lora_alpha: 32
+  lora_dropout: 0.1
+  target_modules:
+    - q_proj
+    - v_proj
+    - o_proj
+    # Lightweight 3-module start
+
+output:
+  base_output_dir: ./outputs
+  experiment_name: a40-ultimate
+
+logging:
+  report_to: tensorboard
+  project_name: llama-lora-a40-ultimate
