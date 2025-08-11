@@ -17,7 +17,7 @@ dataset:
 
 training:
   lr: 2e-5
-  batch_size: 32
+  batch_size: 16
   gradient_accumulation_steps: 8
   epochs: 5
   seed: 42
