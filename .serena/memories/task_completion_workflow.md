@@ -1,67 +1,117 @@
 # Task Completion Workflow
 
-## Before Committing Changes
+## When a Task is Completed
 
-### 1. Code Quality Checks
+### 1. Code Quality Checks (REQUIRED)
+Always run these commands before considering a task complete:
+
 ```bash
-# Lint the code - fix any issues
-uv run ruff check .
+# Format code with Ruff
+ruff format .
 
-# Format the code
-uv run ruff format
+# Check for style issues
+ruff check .
+
+# Fix auto-fixable issues
+ruff check --fix .
 ```
 
-### 2. Run Tests
+### 2. Testing (REQUIRED)
+Verify that all tests pass:
+
 ```bash
 # Run all tests
 pytest tests/
 
-# Run specific tests if relevant
-pytest tests/test_config_validation.py -v
+# Run with verbose output if debugging needed
+pytest tests/ -v
+
+# For specific modules touched
+pytest tests/test_<relevant_module>.py -v
 ```
 
-### 3. Validate Configuration (if config changes)
+### 3. Configuration Validation (For Config Changes)
+If configuration was modified:
+
 ```bash
-# Validate default configuration
+# Validate default config
 uv run python -m llama_lora.validate
 
-# Validate specific experiment configs
+# Validate experiment configs
 uv run python -m llama_lora.validate +experiment=quick_test
+uv run python -m llama_lora.validate +experiment=default-dora
 ```
 
-### 4. Smoke Test (for ML code changes)
+### 4. Smoke Test (For Major Changes)
+Run a quick end-to-end test:
+
 ```bash
-# Quick end-to-end test (CPU-friendly)
+# Quick training test
 uv run python -m llama_lora.train +experiment=quick_test
+
+# Verify inference works
+uv run python -m llama_lora.infer "Test prompt"
 ```
 
-## Git Workflow
+### 5. Documentation Updates
+- Update docstrings if function signatures changed
+- Update README.md if user-facing features changed
+- Ensure type hints are complete and accurate
 
-### Commit Messages
-Follow Conventional Commits format:
-- `feat:` - new feature
-- `fix:` - bug fix
-- `docs:` - documentation changes
-- `chore:` - maintenance tasks
-- `refactor:` - code refactoring
+### 6. Clean Up
+```bash
+# Remove Python cache files
+find . -type d -name __pycache__ -exec rm -rf {} +
 
-Example: `feat: add DoRA support to training pipeline`
+# Clean up any test outputs
+rm -rf outputs/experiments/test_*
+```
 
-### Pull Request Requirements
-- Clear summary and rationale
-- Link to related issues (`Fixes #123`)
-- Describe what changed and how to test
-- Note resource requirements (CPU/GPU)
-- Update README.md if commands/UX changed
-- Include screenshots/logs if helpful
+### 7. Final Verification Checklist
+Before marking complete, verify:
+- [ ] Code is formatted (ruff format)
+- [ ] No linting errors (ruff check)
+- [ ] All tests pass (pytest)
+- [ ] Type hints are present
+- [ ] Docstrings are updated
+- [ ] No debug print statements left
+- [ ] No TODO comments without issues created
+- [ ] Configuration validates
+- [ ] Changes work end-to-end
 
-## Security Considerations
-- Never commit secrets or tokens
-- Ensure `huggingface-cli login` is documented for gated models
-- Avoid committing large model artifacts in `outputs/`
-- Check that sensitive paths are in `.gitignore`
+### 8. Git Workflow (When Requested)
+Only if explicitly asked to commit:
 
-## Documentation Updates
-- Update README.md for user-facing changes
-- Update AGENTS.md for development workflow changes
-- Keep docstrings current for complex functions
+```bash
+# Check what changed
+git status
+git diff
+
+# Stage and commit
+git add -A
+git commit -m "type: description"
+```
+
+## Error Recovery Workflow
+
+If any step fails:
+
+1. **Linting Errors**: Fix manually or use `ruff check --fix`
+2. **Test Failures**: Debug and fix, re-run specific test
+3. **Config Validation**: Check schema.py for constraints
+4. **Runtime Errors**: Check error messages, fix, and re-test
+
+## Performance Considerations
+
+After implementation:
+- Check memory usage isn't increased significantly
+- Verify training still runs on target hardware
+- Ensure no performance regressions in critical paths
+
+## Important Notes
+
+- **NEVER** skip the ruff format/check steps
+- **ALWAYS** run tests after making changes
+- **VERIFY** configuration changes don't break existing presets
+- **TEST** on small data first before full runs
+- **DOCUMENT** any new parameters or features

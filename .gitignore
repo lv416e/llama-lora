@@ -20,3 +20,6 @@ out-llama-lora
 
 # macOS system files
 **/.DS_Store
+**/*.png
+**/*.jpg
+**/*.csv
