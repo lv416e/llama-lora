@@ -10,7 +10,9 @@
                 "--transport",
                 "stdio",
                 "--context",
-                "ide-assistant"
+                "ide-assistant",
+                "--enable-web-dashboard",
+                "false"
             ]
         },
         "context7": {
